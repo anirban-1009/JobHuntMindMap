@@ -1,0 +1,6 @@
+2026-02-07 23:09:15,050 - src.ingest.browser_manager - INFO - Initiating manual login...
+2026-02-07 23:09:18,411 - src.ingest.browser_manager - INFO - Please log in to LinkedIn in the browser window.
+2026-02-07 23:09:18,411 - src.ingest.browser_manager - INFO - The script will wait until it detects you are logged in...
+2026-02-07 23:09:46,410 - src.ingest.browser_manager - INFO - Login detected!
+2026-02-07 23:09:47,843 - src.ingest.browser_manager - INFO - Session saved!
+2026-02-07 23:09:49,023 - src.ingest.browser_manager - INFO - Session saved to data/session.json

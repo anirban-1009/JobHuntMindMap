@@ -21,3 +21,4 @@ data/sample_connections.csv
 data/sample_resume.pdf
 scripts/create_samples.py
 scripts/verify_ingestion.py
+data/session.json

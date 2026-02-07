@@ -1,33 +1,38 @@
-FROM python:3.11-slim-bookworm
+FROM python:3.12-slim-bookworm
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies (for LaTeX and Playwright)
-# - playwright needs deps (installed later)
-# - texlive-xetex for LaTeX compilation (includes fonts)
+# Install system dependencies
+# - texlive-xetex for LaTeX compilation
+# - curl to download files
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
     texlive-xetex \
     texlive-fonts-recommended \
     texlive-plain-generic \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Playwright dependencies manually (before pip to cache)
-# This is a bit complex as `playwright install-deps` usually needs playwright installed first.
-# We will do it in a cleaner step after pip install.
+# Install uv for fast package management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Copy dependency definition
-COPY pyproject.toml README.md ./
+# Copy dependency definitions
+COPY pyproject.toml uv.lock README.md ./
 
-# Install python dependencies including playwright
-RUN pip install --no-cache-dir .
+# Install dependencies
+# --frozen: ensure lock file is respected
+# --no-dev: keep image small (unless running tests inside)
+# --compile-bytecode: optimize startup time
+RUN uv sync --frozen --no-dev
 
-# Install Playwright browsers and system dependencies
+# Install Playwright browsers (Chromium only to save space)
+# We need to activate the venv created by uv
+ENV PATH="/app/.venv/bin:$PATH"
 RUN playwright install chromium --with-deps
 
-# Copy source code
+# Copy source code and config
 COPY src/ ./src/
 COPY config.sample.yaml ./config.sample.yaml
 
