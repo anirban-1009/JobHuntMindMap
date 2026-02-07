@@ -15,6 +15,7 @@ A tool to visualize job opportunities and professional network connections withi
 ### 2. Network Integration (LinkedIn)
 - **Connection Import**: Import user's LinkedIn connections.
 - **Company Matching**: Identify which connections work at companies with open relevant positions.
+- **Connection Continuity**: Track major achievements or updates from key connections (via manual input or scraped data) to facilitate "warm" outreach.
 - **Connection Strength**: (Optional) Categorize connections by closeness or relevance to the target role.
 
 ### 3. Obsidian Integration (The "Mind Map")
@@ -26,17 +27,28 @@ A tool to visualize job opportunities and professional network connections withi
 - **Canvas Generation**: Programmatically create Obsidian Canvas files to visualize specific search, e.g., "Top 10 Remote Roles".
 - **Status Tracking**: Use Obsidian properties (YAML frontmatter) to track application status (`To Apply`, `Applied`, `Interviewing`, `Offer`).
 
-### 4. Email Notifications
+### 4. Resume Customization (LaTeX)
+- **Tailored Content**: AI (Gemini) generates specific bullet points or summaries based on the job description.
+- **LaTeX Engine**: Compiles a master `.tex` template with the tailored content into a professional PDF.
+- **Goal**: Provide a ready-to-upload resume for each high-priority job.
+
+### 5. Email Notifications
 - **Daily Digest**: Send a summary email of new high-match job opportunities.
 - **Content**: Include Job Title, Company, Match Score, Connection highlights, and direct Application Links.
+- **Attachments**: **Attach the tailored PDF resume** for each top opportunity directly in the email.
 - **Configuration**: User can configure email settings (SMTP server or local client integration).
 
-### 5. User Workflow
+### 6. Continuous Improvement (Feedback Loop)
+- **Rejection Tracking**: When a job status changes to `Rejected`, prompt for (or infer) the reason.
+- **Gap Analysis**: Aggregate missing skills from rejected jobs and high-match opportunities you didn't apply to.
+- **Improvement Dashboard**: A specific Obsidian Canvas or Note showing "Top Missing Skills" or "Areas to Improve".
+
+### 7. User Workflow
 1.  **Configure**: Set up resume/profile and search criteria.
 2.  **Fetch**: Run the tool to scrape/fetch jobs and connections.
-3.  **Generate**: Tool creates/updates the Obsidian Vault.
-4.  **Explore**: User opens Obsidian to visually explore opportunities and see "who do I know at Google?".
-5.  **Track**: User updates status in Obsidian; tool respects these manual updates on next run.
+3.  **Generate**: Tool creates/updates the Obsidian Vault and Resume.
+4.  **Explore & Apply**: User tracks applications in Obsidian.
+5.  **Refine**: User marks `Rejected` jobs; Tool analyzes gaps for the next cycle.
 
 ### 5. Cost Constraint (Strict)
 - **Free to Use**: The tool must rely entirely on free tools and strictly avoid any paid APIs or services.
