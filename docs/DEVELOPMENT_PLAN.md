@@ -22,9 +22,9 @@
 ## Phase 2: Job Discovery (The Scraper)
 **Goal:** Automate fetching relevant job listings from LinkedIn (via Browser).
 
-- [ ] **Task 2.1**: Browser Automation Setup
-    - Set up Playwright with a `BrowserManager` class.
-    - Handle LinkedIn Login (manual first run to save cookies/state).
+- [x] **Task 2.1**: Browser Automation Setup
+    - [x] Set up Playwright with a `BrowserManager` class.
+    - [x] Handle LinkedIn Login (manual first run to save cookies/state).
 - [ ] **Task 2.2**: Job Search Implementation
     - Internal logic to construct search URLs based on config (location, keywords).
     - Scrape search results (Title, Company, Link, ID).

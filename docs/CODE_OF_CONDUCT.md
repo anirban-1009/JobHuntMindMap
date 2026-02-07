@@ -33,7 +33,12 @@ This document establishes the mandatory standards for all code written within th
 - **Exceptions**: Use **Custom Exception Classes** (e.g., `ResumeParsingError`, `LinkedInAPIError`) in `src.utils.exceptions` rather than generic `Exception` or `ValueError`.
 - **Inheritance**: All custom exceptions should inherit from a base `MindMapError`.
 - **Fail Fast**: Validate inputs early.
-- **Logging**: Do not use `print()`. Use the configured logger from `src.utils.logger`.
+- **Logging**: Do not use `print()`. Use the central logger:
+  ```python
+  from src.utils.logger import get_logger
+  logger = get_logger(__name__)
+  logger.info("...")
+  ```
 
 ### 2.3 Testing & Quality Assurance
 - **Unit Tests**: Every public method MUST have corresponding unit tests.
