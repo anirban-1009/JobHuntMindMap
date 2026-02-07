@@ -54,17 +54,27 @@ obsidian:
     assets: "Assets"
 
 # ==============================================================================
-# SECTION 4: AI & Matching (Gemini)
+# SECTION 4: AI & Matching
 # ==============================================================================
 ai:
-  # Get your free API key at: https://aistudio.google.com/app/apikey
-  gemini_api_key: "${GEMINI_API_KEY}" # Can read from env var
-  
-  # Model to use (gemini-2.0-flash-exp is fast and free)
-  model_name: "gemini-2.0-flash-exp"
+  # Choose your provider: "gemini", "ollama", or "fallback" (tries Gemini then Ollama)
+  provider: "gemini"
 
   # Integration Settings
   matching_threshold: 70 # Minimum score (0-100) to be considered a match
+
+  # Google Gemini Settings
+  # Get your free API key at: https://aistudio.google.com/app/apikey
+  gemini:
+    api_key: "${GEMINI_API_KEY}" # Can read from env var
+    model_name: "gemini-2.0-flash-exp" # Fast and free
+  
+  # Ollama Settings (Local LLM)
+  # Download at: https://ollama.com/
+  ollama:
+    base_url: "http://localhost:11434"
+    model_name: "llama3"
+
 
 # ==============================================================================
 # SECTION 5: Notifications & Resume Generation
