@@ -61,12 +61,12 @@ class TestJobSearcher:
         mock_card = MagicMock()
         mock_title = MagicMock()
         mock_title.count.return_value = 1
-        mock_title.inner_text.return_value = "Software Engineer"
-        mock_title.get_attribute.return_value = "/jobs/view/12345"
+        mock_title.first.inner_text.return_value = "Software Engineer"
+        mock_title.first.get_attribute.return_value = "/jobs/view/12345"
 
         mock_company = MagicMock()
         mock_company.count.return_value = 1
-        mock_company.inner_text.return_value = "Tech Co"
+        mock_company.first.inner_text.return_value = "Tech Co"
 
         mock_location = MagicMock()
         mock_location.count.return_value = 1
@@ -78,7 +78,7 @@ class TestJobSearcher:
             ".job-card-container__metadata-item": mock_location,
         }[selector]
 
-        mock_page.locator.return_value.all.return_value = [mock_card]
+        mock_page.locator.return_value.locator.return_value.all.return_value = [mock_card]
 
         results = searcher.search("Python", "SF")
 

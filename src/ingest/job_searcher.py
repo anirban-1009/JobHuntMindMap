@@ -1,6 +1,6 @@
 import urllib.parse
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.core.constants import LINKEDIN_JOBS_SEARCH_URL, ExperienceLevel, JobType, LocationType
 from src.ingest.browser_manager import BrowserManager
@@ -102,51 +102,128 @@ class JobSearcher:
             logger.error("LinkedIn login wall detected. Please ensure session.json is valid.")
             return []
 
-        # Wait for job cards to load
-        try:
-            page.wait_for_selector(".jobs-search-results-list", timeout=10000)
-        except Exception:
-            logger.warning("Job results list not found. Maybe no results or different layout.")
+        # Try multiple selectors for the results list
+        results_selectors = [
+            ".jobs-search-results-list",
+            "ul.jobs-search__results-list",
+            ".scaffold-layout__list-container",
+            "ul.scaffold-layout__list-container",
+            ".jobs-search-two-pane__job-section",
+            "section.jobs-search-results-list",
+        ]
+        found_selector = None
+
+        for selector in results_selectors:
+            try:
+                # Wait longer for the first few selectors
+                wait_time = 5000 if selector in results_selectors[:3] else 1000
+                page.wait_for_selector(selector, timeout=wait_time)
+                found_selector = selector
+                logger.info(f"Found results list container: {selector}")
+                break
+            except Exception:
+                continue
+
+        if not found_selector:
             # Check for "No matching jobs found"
             if "No matching jobs found" in page.content():
                 logger.info("No matching jobs found.")
-            return []
+                return []
 
-        # Scroll to load more if needed (LinkedIn often loads more on scroll)
-        # For now, let's just get what's visible.
+            # Fallback: check if any job cards exist directly
+            card_detect_selector = (
+                ".jobs-search-results-list__item, .job-card-container, .base-card, .job-search-card, .base-search-card"
+            )
+            if page.locator(card_detect_selector).count() > 0:
+                logger.info("Found job cards without list container.")
+                job_cards = page.locator(card_detect_selector).all()
+            else:
+                # Check for modal login wall or security check
+                if page.locator(".modal--contextual-sign-in, .authwall-modal, .login-modal").count() > 0:
+                    logger.error(
+                        "LinkedIn login modal or authwall detected. Please run 'login' to update session.json."
+                    )
+                    return []
 
-        job_cards = page.locator(".jobs-search-results-list__item").all()
+                if "security-check" in page.url or "checkpoint" in page.url:
+                    logger.error("LinkedIn security check detected. Please log in manually.")
+                    return []
+
+                logger.warning(f"Job results list not found after waiting. Current URL: {page.url}")
+                return []
+        else:
+            # Scroll to load more
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+
+            # Determine card selector based on found list selector
+            # Standard items or any card-like element inside the container
+            card_selector = ".jobs-search-results-list__item, li, .job-card-container, .base-card, .job-search-card"
+
+            job_cards = page.locator(found_selector).locator(card_selector).all()
         results = []
 
         for card in job_cards:
             try:
-                # Extract details
-                # Note: Selectors can be very brittle.
-                title_elem = card.locator(".job-card-list__title")
-                company_elem = card.locator(".job-card-container__primary-description")
-                location_elem = card.locator(".job-card-container__metadata-item")
+                # Try multiple selectors for each field
+                title_selectors = [
+                    ".job-card-list__title",
+                    ".base-search-card__title",
+                    ".job-search-card__title",
+                    "h3",
+                    "h4",
+                    "a",
+                ]
+                company_selectors = [
+                    ".job-card-container__primary-description",
+                    ".base-search-card__subtitle",
+                    ".job-search-card__subtitle",
+                    ".topcard__org-name-link",
+                    ".job-card-container__company-name",
+                ]
+                location_selectors = [
+                    ".job-card-container__metadata-item",
+                    ".job-search-card__location",
+                    ".base-search-card__metadata",
+                ]
 
-                if title_elem.count() == 0:
+                title_elem = self._get_best_locator(card, title_selectors)
+                if not title_elem:
+                    logger.debug("Skipping job card: title element not found.")
                     continue
 
                 title = title_elem.inner_text().strip()
                 link = title_elem.get_attribute("href")
-                # Normalize link (remove query params)
+
+                # If title is not a link, try to find a link inside the card
+                if not link:
+                    link_elem = self._get_best_locator(card, ["a"])
+                    if link_elem:
+                        link = link_elem.get_attribute("href")
+
+                # Normalize link
                 if link:
                     link = link.split("?")[0]
-                    # LinkedIn links can be relative
                     if link.startswith("/"):
                         link = f"https://www.linkedin.com{link}"
 
-                # Extract Job ID from link (usually /jobs/view/123456789/)
                 job_id = ""
                 if link:
                     parts = link.rstrip("/").split("/")
                     if parts:
                         job_id = parts[-1]
+                        # Some links have IDs at the end, some in the middle
+                        if "-" in job_id and not job_id.isdigit():
+                            job_id = job_id.split("-")[-1]
 
-                company = company_elem.inner_text().strip() if company_elem.count() > 0 else "Unknown"
-                location_str = location_elem.first.inner_text().strip() if location_elem.count() > 0 else ""
+                if not job_id:
+                    logger.debug(f"Skipping job card '{title}': job_id not found in link {link}")
+                    continue
+
+                company_elem = self._get_best_locator(card, company_selectors)
+                company = company_elem.inner_text().strip() if company_elem else "Unknown"
+
+                location_elem = self._get_best_locator(card, location_selectors)
+                location_str = location_elem.inner_text().strip() if location_elem else ""
 
                 results.append(
                     JobSearchResult(id=job_id, title=title, company=company, link=link or "", location=location_str)
@@ -157,3 +234,14 @@ class JobSearcher:
 
         logger.info(f"Found {len(results)} jobs.")
         return results
+
+    def _get_best_locator(self, root: Any, selectors: List[str]) -> Optional[Any]:
+        """Helper to find the first matching locator from a list of selectors."""
+        for selector in selectors:
+            try:
+                locator = root.locator(selector)
+                if locator.count() > 0:
+                    return locator.first
+            except Exception:
+                continue
+        return None
