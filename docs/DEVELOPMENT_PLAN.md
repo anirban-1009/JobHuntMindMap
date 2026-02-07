@@ -36,9 +36,9 @@
 ## Phase 3: Intelligence & Matching
 **Goal:** Use AI to score jobs and link them to your network.
 
-- [ ] **Task 3.1**: AI Engine Integration
-    - Implement `src/core/llm_client.py`.
-    - Support Google Gemini (Free Tier) and Ollama.
+- [x] **Task 3.1**: AI Engine Integration
+    - [x] Implement `src/core/llm_client.py`.
+    - [x] Support Google Gemini (Free Tier) and Ollama.
 - [ ] **Task 3.2**: Relevance Scorer
     - Create prompt for "Resume vs Job Description" analysis.
     - Output: Score (0-100), key matching skills, missing skills, reasoning.

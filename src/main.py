@@ -193,5 +193,45 @@ def scrape(config: str, headless: bool, limit: Optional[int]):
         sys.exit(1)
 
 
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--prompt", default="Say 'Mindmap AI Online' if you can hear me.", help="Test prompt")
+def test_ai(config: str, prompt: str):
+    """Test AI provider connection."""
+    from src.core.llm_client import get_llm_client
+
+    cfg_path = pathlib.Path(config)
+    if not cfg_path.exists():
+        click.echo(Fore.RED + f"Config file not found: {cfg_path}")
+        sys.exit(1)
+
+    with open(cfg_path, "r") as f:
+        try:
+            cfg = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            click.echo(Fore.RED + f"Error parsing YAML: {e}")
+            sys.exit(1)
+
+    ai_cfg = cfg.get("ai", {})
+    provider = ai_cfg.get("provider", "gemini")
+
+    click.echo(Fore.CYAN + f"Initializing {provider} client...")
+
+    try:
+        client = get_llm_client(ai_cfg)
+        click.echo(Fore.CYAN + f"Sending test prompt: '{prompt}'")
+        response = client.generate(prompt)
+
+        if response:
+            click.echo(Fore.GREEN + f"\nAI Response ({provider}):")
+            click.echo(f"{Fore.WHITE}{response.strip()}")
+        else:
+            click.echo(Fore.RED + "\nAI returned an empty response. Check your API key or Ollama status.")
+
+    except Exception as e:
+        click.echo(Fore.RED + f"\nAI Check failed: {e}")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()
