@@ -8,12 +8,12 @@
     - [x] Create `src/` directory structure (`ingest`, `core`, `generator`, `utils`).
     - [x] Create `Dockerfile` with system dependencies (Python, Playwright Browsers, TexLive for LaTeX).
     - [x] Define `config.yaml` structure for user inputs.
-- [ ] **Task 1.2**: Resume Parsing
-    - Implement `src/ingest/resume_parser.py`.
-    - Extract text from PDF using `pypdf`.
-    - Create a `ResumeParser` interface for extensibility.
-    - Write unit tests with sample PDFs.
-    - (Advanced) Use Gemini/LLM to structure the resume into a JSON profile.
+- [x] **Task 1.2**: Resume Parsing
+    - [x] Implement `src/ingest/resume_parser.py`.
+    - [x] Extract text from PDF using `pypdf`.
+    - [x] Create a `ResumeParser` interface for extensibility.
+    - [x] Write unit tests with sample PDFs.
+    - [x] (Advanced) Use Gemini/LLM to structure the resume into a JSON profile.
 - [ ] **Task 1.3**: Network Ingestion
     - Implement `src/ingest/linkedin_parser.py`.
     - Parse LinkedIn Data Export (CSV) to get connections + companies.
