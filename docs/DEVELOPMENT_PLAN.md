@@ -28,10 +28,10 @@
 - [x] **Task 2.2**: Job Search Implementation
     - [x] Internal logic to construct search URLs based on config (location, keywords).
     - [x] Scrape search results (Title, Company, Link, ID).
-- [ ] **Task 2.3**: Job Details Extraction
-    - Visit individual job URLs.
-    - Extract full description, posted date, and metadata.
-    - Save raw job data to a temporary JSON/Cache (to avoid re-scraping).
+- [x] **Task 2.3**: Job Details Extraction
+    - [x] Visit individual job URLs.
+    - [x] Extract full description, posted date, and metadata.
+    - [x] Save raw job data to a temporary JSON/Cache (to avoid re-scraping).
 
 ## Phase 3: Intelligence & Matching
 **Goal:** Use AI to score jobs and link them to your network.

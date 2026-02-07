@@ -1,5 +1,6 @@
 import pathlib
 import sys
+from typing import Optional
 
 import click
 import yaml
@@ -120,6 +121,75 @@ def search(config: str, headless: bool):
 
     except Exception as e:
         click.echo(Fore.RED + f"Search failed: {e}")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--headless", is_flag=True, default=False, help="Run in headless mode")
+@click.option("--limit", default=None, type=int, help="Limit number of jobs to scrape")
+def scrape(config: str, headless: bool, limit: Optional[int]):
+    """
+    Scrape full details for jobs found in search.
+
+    Args:
+        config (str): Path to the config.yaml file.
+        headless (bool): Whether to run the browser in headless mode.
+        limit (int): Optional limit on number of jobs.
+    """
+    from src.ingest.browser_manager import BrowserManager
+    from src.ingest.job_details_extractor import JobDetailsExtractor
+    from src.ingest.job_searcher import JobSearcher
+
+    cfg_path = pathlib.Path(config)
+    if not cfg_path.exists():
+        click.echo(Fore.RED + f"Config file not found: {cfg_path}")
+        sys.exit(1)
+
+    with open(cfg_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    session_path = pathlib.Path("data/session.json")
+
+    click.echo(Fore.CYAN + f"Starting job search and extraction (headless={headless})...")
+
+    try:
+        with BrowserManager(headless=headless, session_path=session_path) as browser:
+            searcher = JobSearcher(browser)
+            extractor = JobDetailsExtractor(browser)
+
+            search_cfg = cfg.get("search", {})
+            keywords_list = search_cfg.get("keywords", [])
+            location = search_cfg.get("location", "United States")
+            location_type = search_cfg.get("location_type", "Any")
+            filters = search_cfg.get("filters", {})
+
+            all_results = []
+            for keywords in keywords_list:
+                click.echo(f"Searching for '{keywords}' in {location}...")
+                results = searcher.search(keywords, location, filters, location_type)
+                all_results.extend(results)
+
+            # deduplicate by ID
+            unique_results = list({r.id: r for r in all_results if r.id}.values())
+
+            if limit:
+                unique_results = unique_results[:limit]
+
+            click.echo(Fore.CYAN + f"\nScraping details for {len(unique_results)} unique jobs...")
+
+            # Using extractor to get details
+            details = extractor.extract_multiple_jobs(unique_results)
+
+            click.echo(Fore.GREEN + f"Successfully scraped {len(details)} / {len(unique_results)} jobs.")
+
+            # Print a few
+            for d in details[:5]:
+                click.echo(f"- {Fore.WHITE}{d.title} {Fore.YELLOW}@ {d.company}")
+                click.echo(f"  {Fore.BLUE}Link: {d.link}")
+
+    except Exception as e:
+        click.echo(Fore.RED + f"Scrape failed: {e}")
         sys.exit(1)
 
 
