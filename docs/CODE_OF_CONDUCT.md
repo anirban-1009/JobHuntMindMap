@@ -27,9 +27,11 @@ This document establishes the mandatory standards for all code written within th
 - **PEP 8**: Adhere strictly to PEP 8 standards. Used `ruff` or `black` for auto-formatting.
 - **Type Hinting**: All function signatures must include type hints (`def process(self, data: Dict[str, Any]) -> bool:`).
 - **Docstrings**: All classes and public methods must have Google-style docstrings describing arguments, return values, and exceptions.
+- **Data Classes**: When a function returns multiple values, use a `dataclass` or `TypedDict` instead of a tuple or dictionary. This improves type safety and readability.
 
 ### 2.2 Error Handling
-- **Exceptions**: Use custom exception classes (e.g., `ResumeParsingError`) in `src.utils.exceptions` rather than generic `Exception`.
+- **Exceptions**: Use **Custom Exception Classes** (e.g., `ResumeParsingError`, `LinkedInAPIError`) in `src.utils.exceptions` rather than generic `Exception` or `ValueError`.
+- **Inheritance**: All custom exceptions should inherit from a base `MindMapError`.
 - **Fail Fast**: Validate inputs early.
 - **Logging**: Do not use `print()`. Use the configured logger from `src.utils.logger`.
 
@@ -37,14 +39,18 @@ This document establishes the mandatory standards for all code written within th
 - **Unit Tests**: Every public method MUST have corresponding unit tests.
 - **Coverage**: Aim for maximum coverage (minimum 80%). Use `pytest-cov` to verify.
 - **CI/CD**: All Pull Requests must pass the automated test suite via GitHub Actions before merging.
-- **Mocks**: External services (LinkedIn, Gemini API) must be mocked in tests to ensure deterministic execution.
+- **Class-Based Tests**: Organize tests into test classes (`class TestResumeParser:`) rather than loose functions.
+- **Mocks**: External services and I/O MUST be mocked. Use `unittest.mock` or `pytest-mock`.
+- **Determinism**: Tests must never rely on live network calls or external state.
+- **Structure**: The `tests` folder structure must mirror the `src` project structure (e.g., `src/ingest/parser.py` -> `tests/ingest/test_parser.py`).
 
 ### 2.4 Package Management
 - **Tool**: Always use `uv` for package management.
+- **Python Execution**: Always use `uv run python` to run scripts or access the python interpreter (e.g. `uv run python -m src.main`). This ensures the correct environment and dependencies are used.
 - **Commands**:
   - Install dependencies: `uv sync`
   - Add dependency: `uv add <package>`
-  - Run scripts: `uv run python -m src.main`
+  - Run tests: `uv run pytest`
 - **Avoid Pip**: Do not use `pip install` directly unless absolutely necessary. Fix dependency issues via `uv`.
 
 ## 3. Extensibility Checklist
