@@ -3,20 +3,21 @@
 ## Phase 1: Foundation & Data Ingestion
 **Goal:** Set up the project and get user data (Resume + Connections) into the system.
 
-- [ ] **Task 1.1**: Project Initialization
-    - Set up `pyproject.toml` with dependencies (`pypdf`, `pandas`, `pyyaml`, `playwright`, `google-generativeai`).
-    - Create `src/` directory structure (`ingest`, `core`, `generator`, `utils`).
-    - Create `Dockerfile` with system dependencies (Python, Playwright Browsers, TexLive for LaTeX).
-    - Define `config.yaml` structure for user inputs.
-- [ ] **Task 1.2**: Resume Parsing
-    - Implement `src/ingest/resume_parser.py`.
-    - Extract text from PDF.
-    - (Basic) Extract skills/keywords using regex/spacy.
-    - (Advanced) Use Gemini/LLM to structure the resume into a JSON profile.
-- [ ] **Task 1.3**: Network Ingestion
-    - Implement `src/ingest/linkedin_parser.py`.
-    - Parse LinkedIn Data Export (CSV) to get connections + companies.
-    - Clean and normalize company names.
+- [x] **Task 1.1**: Project Initialization
+    - [x] Set up `pyproject.toml` with dependencies (`pypdf`, `pandas`, `pyyaml`, `playwright`, `google-generativeai`).
+    - [x] Create `src/` directory structure (`ingest`, `core`, `generator`, `utils`).
+    - [x] Create `Dockerfile` with system dependencies (Python, Playwright Browsers, TexLive for LaTeX).
+    - [x] Define `config.yaml` structure for user inputs.
+- [x] **Task 1.2**: Resume Parsing
+    - [x] Implement `src/ingest/resume_parser.py`.
+    - [x] Extract text from PDF using `pypdf`.
+    - [x] Create a `ResumeParser` interface for extensibility.
+    - [x] Write unit tests with sample PDFs.
+    - [x] (Advanced) Use Gemini/LLM to structure the resume into a JSON profile.
+- [x] **Task 1.3**: Network Ingestion
+    - [x] Implement `src/ingest/linkedin_parser.py`.
+    - [x] Parse LinkedIn Data Export (CSV) to get connections + companies.
+    - [x] Clean and normalize company names.
 
 ## Phase 2: Job Discovery (The Scraper)
 **Goal:** Automate fetching relevant job listings from LinkedIn (via Browser).
