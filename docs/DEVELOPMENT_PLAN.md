@@ -25,9 +25,9 @@
 - [x] **Task 2.1**: Browser Automation Setup
     - [x] Set up Playwright with a `BrowserManager` class.
     - [x] Handle LinkedIn Login (manual first run to save cookies/state).
-- [ ] **Task 2.2**: Job Search Implementation
-    - Internal logic to construct search URLs based on config (location, keywords).
-    - Scrape search results (Title, Company, Link, ID).
+- [x] **Task 2.2**: Job Search Implementation
+    - [x] Internal logic to construct search URLs based on config (location, keywords).
+    - [x] Scrape search results (Title, Company, Link, ID).
 - [ ] **Task 2.3**: Job Details Extraction
     - Visit individual job URLs.
     - Extract full description, posted date, and metadata.
