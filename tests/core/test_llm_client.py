@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.core.llm_client import GeminiClient, LLMClient, OllamaClient, get_llm_client
+from src.core.llm_client import FallbackClient, GeminiClient, LLMClient, OllamaClient, get_llm_client
 
 
 class TestLLMClient:
@@ -50,6 +50,17 @@ class TestLLMClient:
         result = client.generate_json("test")
         assert result == {"status": "ok", "value": 42}
 
+    def test_llm_client_generate_json_alternate_block(self):
+        """Test JSON parsing with alternate markdown blocks."""
+
+        class MockClient(LLMClient):
+            def generate(self, prompt, system_instruction=None):
+                return '```\n{"status": "ok"}\n```'
+
+        client = MockClient()
+        result = client.generate_json("test")
+        assert result == {"status": "ok"}
+
     def test_llm_client_generate_json_failure(self):
         """Test JSON parsing failure returns empty dict."""
 
@@ -76,6 +87,57 @@ class TestLLMClient:
         assert isinstance(client, OllamaClient)
         assert client.model_name == "phi3"
         assert client.base_url == "http://local:11434"
+
+    @patch("src.core.ai.gemini.genai.configure")
+    def test_factory_fallback_both_available(self, mock_configure):
+        """Test factory in fallback mode when both are configured."""
+        config = {"provider": "fallback", "gemini": {"api_key": "abc"}, "ollama": {"model_name": "phi3"}}
+        client = get_llm_client(config)
+        assert isinstance(client, FallbackClient)
+        assert len(client.clients) == 2
+
+    def test_factory_fallback_gemini_missing(self):
+        """Test factory in fallback mode when Gemini is missing (returns Ollama)."""
+        config = {
+            "provider": "fallback",
+            "gemini": {"api_key": ""},  # Missing key
+            "ollama": {"model_name": "phi3"},
+        }
+        client = get_llm_client(config)
+        assert isinstance(client, OllamaClient)
+        assert client.model_name == "phi3"
+
+    def test_fallback_client_success_first(self):
+        """Test FallbackClient returns first success."""
+        c1 = MagicMock(spec=LLMClient)
+        c1.generate.return_value = "Success 1"
+        c2 = MagicMock(spec=LLMClient)
+
+        fallback = FallbackClient([c1, c2])
+        assert fallback.generate("test") == "Success 1"
+        c1.generate.assert_called_once()
+        c2.generate.assert_not_called()
+
+    def test_fallback_client_success_second(self):
+        """Test FallbackClient falls back on error or empty response."""
+        c1 = MagicMock(spec=LLMClient)
+        c1.generate.side_effect = Exception("error")
+        c2 = MagicMock(spec=LLMClient)
+        c2.generate.return_value = "Success 2"
+
+        fallback = FallbackClient([c1, c2])
+        assert fallback.generate("test") == "Success 2"
+        c2.generate.assert_called_once()
+
+    def test_fallback_client_all_fail(self):
+        """Test FallbackClient returns empty string if all fail."""
+        c1 = MagicMock(spec=LLMClient)
+        c1.generate.return_value = ""
+        c2 = MagicMock(spec=LLMClient)
+        c2.generate.side_effect = Exception("error")
+
+        fallback = FallbackClient([c1, c2])
+        assert fallback.generate("test") == ""
 
     def test_factory_invalid_provider(self):
         """Test factory function raises error for unknown provider."""
