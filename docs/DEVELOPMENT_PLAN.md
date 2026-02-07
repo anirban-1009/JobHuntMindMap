@@ -14,10 +14,10 @@
     - [x] Create a `ResumeParser` interface for extensibility.
     - [x] Write unit tests with sample PDFs.
     - [x] (Advanced) Use Gemini/LLM to structure the resume into a JSON profile.
-- [ ] **Task 1.3**: Network Ingestion
-    - Implement `src/ingest/linkedin_parser.py`.
-    - Parse LinkedIn Data Export (CSV) to get connections + companies.
-    - Clean and normalize company names.
+- [x] **Task 1.3**: Network Ingestion
+    - [x] Implement `src/ingest/linkedin_parser.py`.
+    - [x] Parse LinkedIn Data Export (CSV) to get connections + companies.
+    - [x] Clean and normalize company names.
 
 ## Phase 2: Job Discovery (The Scraper)
 **Goal:** Automate fetching relevant job listings from LinkedIn (via Browser).
