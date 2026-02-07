@@ -69,7 +69,7 @@ class LinkedInParser:
                     {
                         "first_name": row.get("First Name"),
                         "last_name": row.get("Last Name"),
-                        "company": company,
+                        "company": self._normalize_company(company) if company else None,
                         "position": position,
                         "connected_on": row.get("Connected On"),
                     }
@@ -95,3 +95,45 @@ class LinkedInParser:
             if conn["company"]:
                 companies.add(conn["company"])
         return sorted(list(companies))
+
+    def _normalize_company(self, company_name: str) -> str:
+        """
+        Cleans and normalizes company names.
+
+        Args:
+            company_name (str): The raw company name.
+
+        Returns:
+             str: Normalized company name.
+        """
+        if not company_name:
+            return ""
+
+        name = company_name.strip()
+
+        # Remove common legal entities
+        # Prioritize longer suffixes to avoid partial matches
+        suffixes = [
+            " Inc.",
+            " Inc",
+            ", Inc.",
+            ", Inc",
+            " LLC",
+            " L.L.C.",
+            " Pty Ltd",
+            " PVT LTD",
+            " Ltd.",
+            " Ltd",
+            ", Ltd.",
+        ]
+
+        temp_name = name
+        for suffix in suffixes:
+            if temp_name.lower().endswith(suffix.lower()):
+                temp_name = temp_name[: -len(suffix)].strip()
+                # If we removed a suffix, we might have trailing punctuation like a comma
+                if temp_name.endswith(","):
+                    temp_name = temp_name[:-1].strip()
+                break  # only remove one main suffix
+
+        return temp_name

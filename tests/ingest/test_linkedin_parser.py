@@ -87,4 +87,24 @@ Bob,Builder,,Tech Corp,Manager,15 Jan 2024
 
         assert len(companies) == 2
         assert "Tech Corp" in companies
-        assert "StartUp Inc" in companies
+        assert "StartUp" in companies
+
+    def test_normalize_company(self, mock_csv_file):
+        """Test company name normalization."""
+        parser = LinkedInParser(mock_csv_file)
+
+        # Test basic whitespace
+        assert parser._normalize_company("  Google  ") == "Google"
+
+        # Test suffix removal
+        assert parser._normalize_company("OpenAI Inc.") == "OpenAI"
+        assert parser._normalize_company("OpenAI, Inc.") == "OpenAI"
+        assert parser._normalize_company("Example LLC") == "Example"
+        assert parser._normalize_company("Example L.L.C.") == "Example"
+        assert parser._normalize_company("Global Ltd.") == "Global"
+
+        # Test mixed case
+        assert parser._normalize_company("STARTUP pvt ltd") == "STARTUP"
+
+        # Test no suffix
+        assert parser._normalize_company("Microsoft") == "Microsoft"
