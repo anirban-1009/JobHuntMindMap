@@ -1,4 +1,5 @@
 # Job Hunt Mind Mapper
+![Coverage](coverage.svg)
 
 **Job Hunt Mind Mapper** is a Python-based tool designed to transform your job search into a visual, interactive mind map within Obsidian. It leverages your professional experience and LinkedIn network to surface and prioritize relevant opportunities.
 
@@ -16,6 +17,7 @@ Instead of tracking applications in endless spreadsheets, this tool generates a 
 *   [Data Processing](docs/DATA_PROCESSING.md) - The logic behind job matching and scoring.
 *   [Development Plan](docs/DEVELOPMENT_PLAN.md) - Phased implementation guide with task lists.
 *   [Deployment Strategy](docs/DEPLOYMENT.md) - How to run and schedule the tool locally.
+*   [Code of Conduct](docs/CODE_OF_CONDUCT.md) - Design patterns (SOLID, OOP) and engineering standards.
 
 ## Getting Started (Planned)
 1.  **Configure**: Set up your profile and search criteria in `config.yaml`.

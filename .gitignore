@@ -1,0 +1,17 @@
+[
+  "*.pyc",
+  "__pycache__",
+  "data/*",
+  "!data/.gitkeep",
+  "output/*",
+  "!output/.gitkeep",
+  "config.yaml",
+  ".env",
+  "*.log",
+  ".vscode",
+  ".idea",
+  "config.yaml",
+  ".coverage"
+]
+*.pyc
+.coverage

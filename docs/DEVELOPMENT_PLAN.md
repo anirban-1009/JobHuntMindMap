@@ -3,15 +3,16 @@
 ## Phase 1: Foundation & Data Ingestion
 **Goal:** Set up the project and get user data (Resume + Connections) into the system.
 
-- [ ] **Task 1.1**: Project Initialization
-    - Set up `pyproject.toml` with dependencies (`pypdf`, `pandas`, `pyyaml`, `playwright`, `google-generativeai`).
-    - Create `src/` directory structure (`ingest`, `core`, `generator`, `utils`).
-    - Create `Dockerfile` with system dependencies (Python, Playwright Browsers, TexLive for LaTeX).
-    - Define `config.yaml` structure for user inputs.
+- [x] **Task 1.1**: Project Initialization
+    - [x] Set up `pyproject.toml` with dependencies (`pypdf`, `pandas`, `pyyaml`, `playwright`, `google-generativeai`).
+    - [x] Create `src/` directory structure (`ingest`, `core`, `generator`, `utils`).
+    - [x] Create `Dockerfile` with system dependencies (Python, Playwright Browsers, TexLive for LaTeX).
+    - [x] Define `config.yaml` structure for user inputs.
 - [ ] **Task 1.2**: Resume Parsing
     - Implement `src/ingest/resume_parser.py`.
-    - Extract text from PDF.
-    - (Basic) Extract skills/keywords using regex/spacy.
+    - Extract text from PDF using `pypdf`.
+    - Create a `ResumeParser` interface for extensibility.
+    - Write unit tests with sample PDFs.
     - (Advanced) Use Gemini/LLM to structure the resume into a JSON profile.
 - [ ] **Task 1.3**: Network Ingestion
     - Implement `src/ingest/linkedin_parser.py`.
