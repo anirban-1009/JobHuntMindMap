@@ -20,14 +20,15 @@ Processes raw data and applies business logic.
 - **Network Graph Builder**: Maps connections to companies with open roles.
   - Identifies "high leverage" connections (people with hiring influence or in relevant departments).
 
-### 3. Vault Generator Layer (`src/generator`)
-Transforms processed data into Obsidian-compatible Markdown files.
-- **Template Engine**: Uses Jinja2 templates for consistent note formatting.
-- **Structure Manager**: Maintains folder hierarchy (`Jobs/`, `Companies/`, `People/`).
-- **Graph Metadata**: Adds YAML frontmatter for Obsidian properties (`status`, `priority`, `salary_range`).
-- **Canvas Builder**: Generates JSON for `.canvas` files to visualize specific searches (e.g., "Top 10 Remote Roles").
+### 4. Generation Layer (`src/generator`)
+Produces the final output artifacts.
+- **Obsidian Builder**: Creates Markdown notes and Canvas files.
+- **Resume Engine**: 
+  - Takes a LaTeX template (`.tex`).
+  - Uses AI (Gemini) to inject tailored content for a specific job.
+  - Compiles to PDF using a local LaTeX installation (`pdflatex` or `tectonic`).
 
-### 4. Notification Layer (`src/notification`)    
+### 5. Notification Layer (`src/notification`)    
 Responsible for alerting the user of new opportunities.
 - **Email Service**: Formats and sends HTML/Text emails using standard Python `smtplib`.
 - **Digest Generator**: Compiles daily summaries of high-priority jobs.

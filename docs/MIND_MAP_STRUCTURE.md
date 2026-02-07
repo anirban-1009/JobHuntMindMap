@@ -16,9 +16,9 @@ The power of the mind map comes from the links between these three core entities
     -   *Backlinks from*: Jobs at this company, People working here.
     -   *Tags*: `#company`, `#target_company`
 
-3.  **People** (`People/`)
-    -   *Links to*: `[[Current Company]]`, `[[Target Role]]` (if they are in a similar role)
-    -   *Tags*: `#connection`, `#network/strong`, `#recruiter`
+-   *Links to*: `[[Current Company]]`, `[[Target Role]]` (if they are in a similar role)
+-   *Tags*: `#connection`, `#network/strong`, `#recruiter`
+-   *Properties*: `Last_Contacted`, `Latest_Update`
 
 ## Folder Hierarchy
 
@@ -36,6 +36,9 @@ MindMap_Vault/
 │   └── Recruiter Mike.md    # Recruiter at Netflix
 ├── Assets/                  # Resume versions, cover letters
 │   └── Resume_2024.pdf
+├── Analysis/                # Skill gaps & Retrospectives
+│   ├── Missing_Skills.md
+│   └── Rejected_Applications.md
 └── Templates/               # Templates for new notes
     ├── Job_Template.md
     └── Meeting_Note.md
