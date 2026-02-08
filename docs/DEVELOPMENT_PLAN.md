@@ -58,10 +58,10 @@
     - Logic to create folders and update Markdown files.
 - [x] **Task 4.3**: Canvas Dashboard
     - Generate `Dashboard.canvas` JSON.
-- [ ] **Task 4.4**: Resume Tailoring Engine
-    - Create a `.tex` master template.
-    - Implement logic to use Gemini to rewrite summary/skills for a specific job.
-    - Compile customized PDF using `pdflatex`.
+- [x] **Task 4.4**: Resume Tailoring Engine
+    - [x] Create a `.tex` master template.
+    - [x] Implement logic to use Gemini to rewrite summary/skills for a specific job.
+    - [x] Compile customized PDF using `pdflatex`.
 
 ## Phase 5: Notifications, Deployment & Polish
 **Goal:** Make the tool robust, easy to run, and schedule.
