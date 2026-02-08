@@ -8,6 +8,8 @@ We will not be deploying to a cloud server (AWS/Heroku) because:
 2.  **Privacy**: Your personal data stays on your machine.
 3.  **Obsidian Integration**: The tool needs direct write access to your local filesystem where your Vault lives.
 
+> 💡 **New to the tool?** Follow the [First Run Guide](FIRST_RUN.md) before attempting deployment.
+
 ## Deployment Strategy
 
 ### 1. Docker Container (Primary)
