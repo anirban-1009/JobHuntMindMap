@@ -73,6 +73,6 @@
     - [x] Create `Dockerfile` for containerized execution.
     - [x] Write `scripts/run_daily.sh` for cron jobs.
     - [x] Add `setup.py` or `pyproject.toml` scripts for easy installation.
-- [ ] **Task 5.3**: Documentation & Instructions
+- [x] **Task 5.3**: Documentation & Instructions
     - Update `README.md` with "How to Run".
     - Add "First Run" guide (getting Cookie for LinkedIn, getting Gemini Key).
