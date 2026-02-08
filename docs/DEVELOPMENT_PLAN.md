@@ -42,9 +42,9 @@
 - [x] **Task 3.2**: Relevance Scorer
     - [x] Create prompt for "Resume vs Job Description" analysis.
     - [x] Output: Score (0-100), key matching skills, missing skills, reasoning.
-- [ ] **Task 3.3**: Network Graph Builder
-    - Logic to match specific job companies with user's connection companies.
-    - Logic to track "Last Contacted" and recent achievements.
+- [x] **Task 3.3**: Network Graph Builder
+    - [x] Logic to match specific job companies with user's connection companies.
+    - [x] Logic to track "Last Contacted" and recent achievements.
 - [ ] **Task 3.4**: Gap Analysis (Feedback Loop)
     - Logic to aggregate missing skills from High-Match jobs.
     - Logic to track "Rejected" status and prompt (or deduce) improvement areas.
