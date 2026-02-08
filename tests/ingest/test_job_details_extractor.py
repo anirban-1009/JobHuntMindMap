@@ -331,8 +331,8 @@ class TestJobDetailsExtractor:
                 return ""
 
             # We also need it to work for main job details
-            mock_get_text.side_effect = (
-                lambda root, selectors: "Basic Title"
+            mock_get_text.side_effect = lambda root, selectors: (
+                "Basic Title"
                 if root == mock_page and "title" in str(selectors[0])
                 else get_text_side_effect(root, selectors)
             )
