@@ -54,7 +54,7 @@
 
 - [x] **Task 4.1**: Obsidian Template Implementation
     - [x] Create Jinja2 templates for `Job.md`, `Company.md`, `Person.md`.
-- [ ] **Task 4.2**: Vault/File Manager
+- [x] **Task 4.2**: Vault/File Manager
     - Logic to create folders and update Markdown files.
 - [ ] **Task 4.3**: Canvas Dashboard
     - Generate `Dashboard.canvas` JSON.
