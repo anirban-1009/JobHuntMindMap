@@ -128,7 +128,8 @@ def search(config: str, headless: bool):
 @click.option("--config", default="config.yaml", help="Path to config file")
 @click.option("--headless", is_flag=True, default=False, help="Run in headless mode")
 @click.option("--limit", default=None, type=int, help="Limit number of jobs to scrape")
-def scrape(config: str, headless: bool, limit: Optional[int]):
+@click.option("--force", is_flag=True, default=False, help="Force re-scrape of cached jobs")
+def scrape(config: str, headless: bool, limit: Optional[int], force: bool):
     """
     Scrape full details for jobs found in search.
 
@@ -136,7 +137,9 @@ def scrape(config: str, headless: bool, limit: Optional[int]):
         config (str): Path to the config.yaml file.
         headless (bool): Whether to run the browser in headless mode.
         limit (int): Optional limit on number of jobs.
+        force (bool): Whether to force re-scrape.
     """
+    from src.core.ai import get_llm_client
     from src.ingest.browser_manager import BrowserManager
     from src.ingest.job_details_extractor import JobDetailsExtractor
     from src.ingest.job_searcher import JobSearcher
@@ -150,13 +153,15 @@ def scrape(config: str, headless: bool, limit: Optional[int]):
         cfg = yaml.safe_load(f)
 
     session_path = pathlib.Path("data/session.json")
+    ai_cfg = cfg.get("ai", {})
 
     click.echo(Fore.CYAN + f"Starting job search and extraction (headless={headless})...")
 
     try:
+        llm = get_llm_client(ai_cfg)
         with BrowserManager(headless=headless, session_path=session_path) as browser:
             searcher = JobSearcher(browser)
-            extractor = JobDetailsExtractor(browser)
+            extractor = JobDetailsExtractor(browser, llm_client=llm)
 
             search_cfg = cfg.get("search", {})
             keywords_list = search_cfg.get("keywords", [])
@@ -179,7 +184,7 @@ def scrape(config: str, headless: bool, limit: Optional[int]):
             click.echo(Fore.CYAN + f"\nScraping details for {len(unique_results)} unique jobs...")
 
             # Using extractor to get details
-            details = extractor.extract_multiple_jobs(unique_results)
+            details = extractor.extract_multiple_jobs(unique_results, force=force)
 
             click.echo(Fore.GREEN + f"Successfully scraped {len(details)} / {len(unique_results)} jobs.")
 
@@ -230,6 +235,66 @@ def test_ai(config: str, prompt: str):
 
     except Exception as e:
         click.echo(Fore.RED + f"\nAI Check failed: {e}")
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("job_id")
+@click.option("--config", default="config.yaml", help="Path to config file")
+def network(job_id: str, config: str):
+    """Find connections at a specific job's company."""
+    from src.core.network_graph import NetworkGraphBuilder
+    from src.ingest.job_details_extractor import JobDetailsExtractor
+
+    cfg_path = pathlib.Path(config)
+    if not cfg_path.exists():
+        click.echo(Fore.RED + f"Config file not found: {cfg_path}")
+        sys.exit(1)
+
+    with open(cfg_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    # Resolve connections path from config or common locations
+    user_cfg = cfg.get("user", {})
+    connections_path = user_cfg.get("linkedin_connections_path") or cfg.get("network", {}).get("connections_path")
+
+    if connections_path:
+        connections_path = pathlib.Path(connections_path)
+    else:
+        connections_path = pathlib.Path("data/Connections.csv")
+
+    if not connections_path.exists():
+        # Try sample if original missing
+        connections_path = pathlib.Path("data/sample_connections.csv")
+        if not connections_path.exists():
+            click.echo(Fore.RED + "Connections file not found.")
+            sys.exit(1)
+
+    try:
+        extractor = JobDetailsExtractor(None)  # No browser needed for cache loading
+        job = extractor.get_cached_job(job_id)
+
+        if not job:
+            click.echo(Fore.RED + f"Job {job_id} not found in cache. Run 'scrape' first.")
+            sys.exit(1)
+
+        metadata_path = user_cfg.get("linkedin_metadata_path")
+        if metadata_path:
+            metadata_path = pathlib.Path(metadata_path)
+
+        builder = NetworkGraphBuilder(connections_path, metadata_path=metadata_path)
+        matches = builder.find_matches(job)
+
+        click.echo(Fore.CYAN + f"\nFound {len(matches)} connections at {job.company}:")
+        for conn in matches:
+            click.echo(f"- {Fore.WHITE}{conn.full_name} {Fore.YELLOW}({conn.position})")
+            if conn.metadata.last_contacted:
+                click.echo(f"  {Fore.BLUE}Last Contacted: {conn.metadata.last_contacted}")
+            if conn.metadata.achievements:
+                click.echo(f"  {Fore.BLUE}Achievements: {', '.join(conn.metadata.achievements)}")
+
+    except Exception as e:
+        click.echo(Fore.RED + f"Network analysis failed: {e}")
         sys.exit(1)
 
 

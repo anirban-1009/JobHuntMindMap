@@ -47,6 +47,24 @@ class LLMClient(ABC):
                 response_text = response_text.split("```")[1].split("```")[0].strip()
 
             return json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback: Try to find the first '{' and last '}'
+            start = response_text.find("{")
+            end = response_text.rfind("}")
+            if start != -1 and end != -1:
+                try:
+                    return json.loads(response_text[start : end + 1])
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON from LLM (fallback): {e}")
+                    logger.debug(f"Raw response: {response_text}")
+                    return {}
+            else:
+                logger.error("Failed to parse JSON from LLM: No JSON object found.")
+                logger.debug(f"Raw response: {response_text}")
+                return {}
+        except Exception as e:
+            logger.error(f"Unexpected error parsing LLM response: {e}")
+            return {}
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON from LLM: {e}")
             logger.debug(f"Raw response: {response_text}")
