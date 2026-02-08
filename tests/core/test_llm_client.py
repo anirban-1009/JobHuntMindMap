@@ -72,6 +72,52 @@ class TestLLMClient:
         result = client.generate_json("test")
         assert result == {}
 
+    def test_llm_client_generate_json_empty_response(self):
+        """Test that an empty response from LLM returns an empty dictionary."""
+
+        class MockClient(LLMClient):
+            def generate(self, prompt, system_instruction=None):
+                return ""
+
+        client = MockClient()
+        result = client.generate_json("test")
+        assert result == {}
+
+    def test_llm_client_generate_json_recovery(self):
+        """Test recovery from malformed JSON by finding the boundaries of the JSON object."""
+
+        class MockClient(LLMClient):
+            def generate(self, prompt, system_instruction=None):
+                return 'Some text before {"key": "value"} some text after'
+
+        client = MockClient()
+        result = client.generate_json("test")
+        assert result == {"key": "value"}
+
+    def test_llm_client_generate_json_unrecoverable(self):
+        """Test that malformed JSON with no boundaries returns an empty dictionary."""
+
+        class MockClient(LLMClient):
+            def generate(self, prompt, system_instruction=None):
+                return "No json here { not even a valid one"
+
+        client = MockClient()
+        result = client.generate_json("test")
+        assert result == {}
+
+    def test_llm_client_generate_json_unexpected_exception(self):
+        """Test that unexpected exceptions during parsing are handled and return an empty dictionary."""
+
+        class MockClient(LLMClient):
+            def generate(self, prompt, system_instruction=None):
+                return '{"valid": "json"}'
+
+        client = MockClient()
+        # Mock json.loads to raise a non-JSON exception
+        with patch("json.loads", side_effect=RuntimeError("Unexpected error")):
+            result = client.generate_json("test")
+            assert result == {}
+
     def test_factory_gemini(self):
         """Test factory function for Gemini provider."""
         config = {"provider": "gemini", "gemini_api_key": "abc"}

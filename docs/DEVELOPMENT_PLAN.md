@@ -69,10 +69,10 @@
 - [x] **Task 5.1**: Email Notification System
     - [x] Implement `src/notification/email_service.py`.
     - [x] Generate HTML digest of new high-scoring jobs.
-- [ ] **Task 5.2**: Deployment Packaging
-    - Create `Dockerfile` for containerized execution.
-    - Write `scripts/run_daily.sh` for cron jobs.
-    - Add `setup.py` or `pyproject.toml` scripts for easy installation.
+- [x] **Task 5.2**: Deployment Packaging
+    - [x] Create `Dockerfile` for containerized execution.
+    - [x] Write `scripts/run_daily.sh` for cron jobs.
+    - [x] Add `setup.py` or `pyproject.toml` scripts for easy installation.
 - [ ] **Task 5.3**: Documentation & Instructions
     - Update `README.md` with "How to Run".
     - Add "First Run" guide (getting Cookie for LinkedIn, getting Gemini Key).

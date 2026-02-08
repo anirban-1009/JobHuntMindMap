@@ -1,43 +1,45 @@
-FROM python:3.12-slim-bookworm
+# Use Microsoft's official Playwright image for robust browser dependency support
+FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV UV_PROJECT_ENVIRONMENT=/venv
+
+# Install system dependencies
+# - texlive-latex-extra includes moderncv and other resume packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    texlive-latex-base \
+    texlive-latex-extra \
+    texlive-fonts-recommended \
+    texlive-fonts-extra \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast package management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uv/bin/uv
+ENV PATH="/uv/bin:$PATH"
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
-# - texlive-xetex for LaTeX compilation
-# - curl to download files
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    wget \
-    gnupg \
-    texlive-xetex \
-    texlive-fonts-recommended \
-    texlive-plain-generic \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Copy dependency files
+COPY pyproject.toml .
+COPY uv.lock .
 
-# Install uv for fast package management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
-
-# Copy dependency definitions
-COPY pyproject.toml uv.lock README.md ./
-
-# Install dependencies
-# --frozen: ensure lock file is respected
-# --no-dev: keep image small (unless running tests inside)
-# --compile-bytecode: optimize startup time
+# Install dependencies using uv
+# --no-dev: exclude development dependencies
 RUN uv sync --frozen --no-dev
 
-# Install Playwright browsers (Chromium only to save space)
-# We need to activate the venv created by uv
-ENV PATH="/app/.venv/bin:$PATH"
-RUN playwright install chromium --with-deps
+# Copy the rest of the application
+COPY . .
 
-# Copy source code and config
-COPY src/ ./src/
-COPY config.sample.yaml ./config.sample.yaml
+# Ensure necessary directories exist
+RUN mkdir -p data/job_cache output/resumes
 
-# Create directories for data and config
-RUN mkdir -p /app/data /app/config /app/output /vault
+# Set the path to use the virtualenv created by uv
+ENV PATH="/venv/bin:$PATH"
 
 # Default command
-CMD ["python", "-m", "src.main"]
+ENTRYPOINT ["mindmap"]
+CMD ["--help"]
