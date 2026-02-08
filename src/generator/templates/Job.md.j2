@@ -1,0 +1,31 @@
+# {{ job.title }} @ [[{{ job.company|replace(' ', '_') }}]]
+
+- **Score:** {{ score.score }}/100
+- **Location:** {{ job.location }}
+- **Posted:** {{ job.posted_date }}
+- **Type:** {{ job.employment_type }}
+- **Seniority:** {{ job.seniority_level }}
+- **Job Function:** {{ job.job_function }}
+- **Industries:** {{ job.industries }}
+- **Link:** [Apply Here]({{ job.link }})
+- **Status:** #ToApply
+
+## Analysis
+**Reasoning:**
+{{ score.reasoning }}
+
+**Matching Skills:**
+{% for skill in score.matching_skills %}
+- {{ skill }}
+{% endfor %}
+
+**Missing Skills:**
+{% for skill in score.missing_skills %}
+- {{ skill }}
+{% endfor %}
+
+## Job Description
+{{ job.description }}
+
+## Notes
+- 

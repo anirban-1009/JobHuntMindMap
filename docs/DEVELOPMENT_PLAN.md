@@ -45,15 +45,15 @@
 - [x] **Task 3.3**: Network Graph Builder
     - [x] Logic to match specific job companies with user's connection companies.
     - [x] Logic to track "Last Contacted" and recent achievements.
-- [ ] **Task 3.4**: Gap Analysis (Feedback Loop)
-    - Logic to aggregate missing skills from High-Match jobs.
-    - Logic to track "Rejected" status and prompt (or deduce) improvement areas.
+- [x] **Task 3.4**: Gap Analysis (Feedback Loop)
+    - [x] Logic to aggregate missing skills from High-Match jobs.
+    - [x] Logic to track "Rejected" status and prompt (or deduce) improvement areas.
 
 ## Phase 4: Artifact Generation (Obsidian & Resume)
 **Goal:** Generate the "Mind Map" vault and tailored application materials.
 
-- [ ] **Task 4.1**: Obsidian Template Implementation
-    - Create Jinja2 templates for `Job.md`, `Company.md`, `Person.md`.
+- [x] **Task 4.1**: Obsidian Template Implementation
+    - [x] Create Jinja2 templates for `Job.md`, `Company.md`, `Person.md`.
 - [ ] **Task 4.2**: Vault/File Manager
     - Logic to create folders and update Markdown files.
 - [ ] **Task 4.3**: Canvas Dashboard
