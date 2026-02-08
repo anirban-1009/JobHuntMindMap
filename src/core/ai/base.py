@@ -65,7 +65,3 @@ class LLMClient(ABC):
         except Exception as e:
             logger.error(f"Unexpected error parsing LLM response: {e}")
             return {}
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from LLM: {e}")
-            logger.debug(f"Raw response: {response_text}")
-            return {}
