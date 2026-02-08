@@ -66,9 +66,9 @@
 ## Phase 5: Notifications, Deployment & Polish
 **Goal:** Make the tool robust, easy to run, and schedule.
 
-- [ ] **Task 5.1**: Email Notification System
-    - Implement `src/notification/email_service.py`.
-    - Generate HTML digest of new high-scoring jobs.
+- [x] **Task 5.1**: Email Notification System
+    - [x] Implement `src/notification/email_service.py`.
+    - [x] Generate HTML digest of new high-scoring jobs.
 - [ ] **Task 5.2**: Deployment Packaging
     - Create `Dockerfile` for containerized execution.
     - Write `scripts/run_daily.sh` for cron jobs.
