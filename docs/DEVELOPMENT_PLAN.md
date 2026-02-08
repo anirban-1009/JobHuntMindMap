@@ -56,7 +56,7 @@
     - [x] Create Jinja2 templates for `Job.md`, `Company.md`, `Person.md`.
 - [x] **Task 4.2**: Vault/File Manager
     - Logic to create folders and update Markdown files.
-- [ ] **Task 4.3**: Canvas Dashboard
+- [x] **Task 4.3**: Canvas Dashboard
     - Generate `Dashboard.canvas` JSON.
 - [ ] **Task 4.4**: Resume Tailoring Engine
     - Create a `.tex` master template.
