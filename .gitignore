@@ -1,25 +1,51 @@
-[
-  "*.pyc",
-  "__pycache__",
-  "data/*",
-  "!data/.gitkeep",
-  "output/*",
-  "!output/.gitkeep",
-  "config.yaml",
-  ".env",
-  "*.log",
-  ".vscode",
-  ".idea",
-  "config.yaml",
-  ".coverage"
-]
+# Python
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
 .coverage
-config.yaml
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+.ruff_cache/
+
+# Mac
 .DS_Store
-data/sample_connections.csv
-data/sample_resume.pdf
-scripts/create_samples.py
-scripts/verify_ingestion.py
+
+# IDEs
+.vscode/
+.idea/
+
+# Environment
+.env
+config.yaml
+
+# Application Data
+# Ignore everything in data/ but keep .gitkeep and sample files
+data/
+!data/.gitkeep
+!data/sample_connections.csv
+!data/sample_resume.pdf
+
+# Ignore session data specifically (redundant with data/* but explicit is safe)
 data/session.json
-logs/
+data/job_cache/
+
+# Application Output
+output/*
+!output/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep

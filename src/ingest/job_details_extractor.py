@@ -4,7 +4,23 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.core.ai import LLMClient
 from src.ingest.browser_manager import BrowserManager
+from src.ingest.selectors import (
+    JOB_APPLY_SELECTORS,
+    JOB_COMPANY_SELECTORS,
+    JOB_CRITERIA_HEADER_SELECTORS,
+    JOB_CRITERIA_ITEM_SELECTORS,
+    JOB_CRITERIA_VALUE_SELECTORS,
+    JOB_DESCRIPTION_SELECTORS,
+    JOB_INSIGHT_SELECTORS,
+    JOB_LOCATION_SELECTORS,
+    JOB_PAGE_WAIT_SELECTORS,
+    JOB_POSTED_DATE_SELECTORS,
+    JOB_SALARY_SELECTORS,
+    JOB_TITLE_SELECTORS,
+    LOGIN_MODAL_SELECTORS,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -25,21 +41,30 @@ class JobDetails:
     job_function: str
     industries: str
     link: str
+    salary: str = ""
+    apply_link: str = ""
     raw_data: Optional[Dict[str, Any]] = None
 
 
 class JobDetailsExtractor:
     """Visits individual job URLs and extracts full details."""
 
-    def __init__(self, browser_manager: BrowserManager, cache_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        browser_manager: Optional[BrowserManager],
+        llm_client: Optional[LLMClient] = None,
+        cache_dir: Optional[Path] = None,
+    ):
         """
         Initialize the JobDetailsExtractor.
 
         Args:
             browser_manager: Initialized BrowserManager instance.
+            llm_client: Optional LLMClient to refine extracted data.
             cache_dir: Directory to store cached job details. Defaults to data/job_cache.
         """
         self.browser = browser_manager
+        self.llm = llm_client
         self.cache_dir = cache_dir or Path("data/job_cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -68,26 +93,38 @@ class JobDetailsExtractor:
         except Exception as e:
             logger.warning(f"Failed to save job {job.id} to cache: {e}")
 
-    def extract_job_details(self, job_id: str, job_url: str) -> Optional[JobDetails]:
+    def extract_job_details(
+        self,
+        job_id: str,
+        job_url: str,
+        fallback_data: Optional[Any] = None,
+        force: bool = False,
+    ) -> Optional[JobDetails]:
         """
         Visits a job URL and extracts its details.
 
         Args:
             job_id: The unique ID of the job.
             job_url: The full URL to the job listing.
+            fallback_data: Optional JobSearchResult or dict with initial info.
+            force: If True, ignore cache and re-scrape.
 
         Returns:
             JobDetails object if successful, None otherwise.
         """
         # Check cache first
-        cached = self.get_cached_job(job_id)
-        if cached:
-            logger.info(f"Using cached details for job {job_id}")
-            return cached
+        if not force:
+            cached = self.get_cached_job(job_id)
+
+            if cached:
+                logger.info(f"Using cached details for job {job_id}")
+                return cached
 
         logger.info(f"Extracting details for job {job_id}: {job_url}")
         try:
             self.browser.goto(job_url)
+            # Give it a moment to settle even after goto returns
+            time.sleep(1)
         except Exception as e:
             logger.error(f"Failed to navigate to {job_url}: {e}")
             return None
@@ -96,81 +133,28 @@ class JobDetailsExtractor:
 
         try:
             # Wait for any of the main job page elements to appear
-            wait_selectors = [
-                ".jobs-description",
-                ".top-card-layout",
-                ".main-content",
-                ".description__text",
-                ".job-details-jobs-unified-top-card",
-            ]
             try:
-                page.wait_for_selector(", ".join(wait_selectors), timeout=15000)
+                page.wait_for_selector(", ".join(JOB_PAGE_WAIT_SELECTORS), timeout=10000)
             except Exception:
                 logger.warning(f"Wait for job details timed out for {job_id}. Current URL: {page.url}")
 
             # Check for login walls
-            if page.locator(".modal--contextual-sign-in, .authwall-modal, .sign-in-modal").count() > 0:
+            if page.locator(", ".join(LOGIN_MODAL_SELECTORS)).count() > 0:
                 logger.debug(f"Login modal detected on job page {job_id}. Attempting to extract what's visible.")
 
             # Let's try to be smart about extracting them.
-            title = self._get_text(
-                page,
-                [
-                    ".job-details-jobs-unified-top-card__job-title",
-                    ".top-card-layout__title",
-                    ".jobs-unified-top-card__job-title",
-                    "h1.top-card-layout__title",
-                    "h1",
-                    ".topcard__title",
-                    "h2.top-card-layout__title",
-                ],
-            )
+            title = self._get_text(page, JOB_TITLE_SELECTORS)
+            company = self._get_text(page, JOB_COMPANY_SELECTORS)
+            location = self._get_text(page, JOB_LOCATION_SELECTORS)
+            description = self._get_text(page, JOB_DESCRIPTION_SELECTORS)
+            posted_date = self._get_text(page, JOB_POSTED_DATE_SELECTORS)
+            salary = self._get_text(page, JOB_SALARY_SELECTORS)
 
-            company = self._get_text(
-                page,
-                [
-                    ".job-details-jobs-unified-top-card__company-name",
-                    ".topcard__org-name-link",
-                    ".topcard__flavor a",
-                    ".top-card-layout__first-subline a",
-                    ".job-details-jobs-unified-top-card__company-name a",
-                    ".jobs-unified-top-card__company-name",
-                    ".app-shared-outline--company-name",
-                ],
-            )
-
-            location = self._get_text(
-                page,
-                [
-                    ".job-details-jobs-unified-top-card__bullet",
-                    ".topcard__flavor--bullet",
-                    ".top-card-layout__first-subline span:nth-child(2)",
-                    ".jobs-unified-top-card__bullet",
-                    ".job-details-jobs-unified-top-card__primary-description-container span:last-child",
-                ],
-            )
-
-            description = self._get_text(
-                page,
-                [
-                    ".jobs-description__container",
-                    ".show-more-less-html__markup",
-                    ".description__text",
-                    ".jobs-description-content__text",
-                    ".description__text--rich",
-                    "#job-details",
-                ],
-            )
-
-            posted_date = self._get_text(
-                page,
-                [
-                    ".job-details-jobs-unified-top-card__posted-date",
-                    ".topcard__flavor--metadata",
-                    "span.posted-time-ago__text",
-                    ".topcard__flavor--metadata.posted-time-ago__text",
-                ],
-            )
+            # Try to find apply link
+            apply_link = ""
+            apply_elem = self._get_best_locator(page, JOB_APPLY_SELECTORS)
+            if apply_elem:
+                apply_link = apply_elem.get_attribute("href") or ""
 
             # Metadata extraction
             seniority = ""
@@ -179,7 +163,13 @@ class JobDetailsExtractor:
             industries = ""
 
             # Try to extract from job insights (unified view)
-            insights = page.locator(".job-details-jobs-unified-top-card__job-insight").all()
+            insights = []
+            for selector in JOB_INSIGHT_SELECTORS:
+                found = page.locator(selector).all()
+                if found:
+                    insights = found
+                    break
+
             for item in insights:
                 text = item.inner_text()
                 if any(x in text for x in ["Full-time", "Contract", "Part-time", "Temporary"]):
@@ -191,10 +181,16 @@ class JobDetailsExtractor:
                     seniority = text.split("·")[0].strip() if "·" in text else text.strip()
 
             # Try to extract from job criteria list (direct view)
-            criteria_items = page.locator(".description__job-criteria-item").all()
+            criteria_items = []
+            for selector in JOB_CRITERIA_ITEM_SELECTORS:
+                found = page.locator(selector).all()
+                if found:
+                    criteria_items = found
+                    break
+
             for item in criteria_items:
-                header = self._get_text(item, [".description__job-criteria-subheader"])
-                value = self._get_text(item, [".description__job-criteria-text"])
+                header = self._get_text(item, JOB_CRITERIA_HEADER_SELECTORS)
+                value = self._get_text(item, JOB_CRITERIA_VALUE_SELECTORS)
 
                 if "Seniority level" in header:
                     seniority = value
@@ -205,30 +201,110 @@ class JobDetailsExtractor:
                 elif "Industries" in header:
                     industries = value
 
+            # Fallback to search result data if we missed something critical
+            if fallback_data:
+
+                def get_data(field):
+                    val = getattr(fallback_data, field, None)
+                    if val is None and isinstance(fallback_data, dict):
+                        val = fallback_data.get(field)
+                    return val or ""
+
+                if not title:
+                    title = get_data("title")
+                if not company or company == "Unknown":
+                    company = get_data("company")
+                if not location:
+                    location = get_data("location")
+
             job_details = JobDetails(
                 id=job_id,
-                title=title,
-                company=company,
-                location=location,
-                description=description,
+                title=title or "Unknown Title",
+                company=company or "Unknown Company",
+                location=location or "",
+                description=description or "No description extracted.",
                 posted_date=posted_date,
                 seniority_level=seniority,
                 employment_type=employment_type,
                 job_function=job_function,
                 industries=industries,
                 link=job_url,
+                salary=salary,
+                apply_link=apply_link,
             )
 
-            if job_details.title or job_details.description:
+            # Refine with LLM if available and extraction seems messy or incomplete
+            if self.llm and (
+                not job_details.description
+                or len(job_details.description) < 100
+                or job_details.company == "Unknown Company"
+            ):
+                # Full page text extraction as a powerful fallback
+                page_text = page.locator("body").inner_text()
+                job_details = self._extract_from_page_text(job_details, page_text[:10000])
+
+            # Save the job details even if some information is missing
+            # We only require a title OR an ID from the link to be somewhat valid
+            if job_details.title != "Unknown Title" or job_details.id:
                 self._save_to_cache(job_details)
                 return job_details
             else:
-                logger.warning(f"Extracted empty details for job {job_id}")
+                logger.warning(f"Extracted completely empty details for job {job_id}")
                 return None
 
         except Exception as e:
+            import traceback
+
+            traceback.print_exc()
             logger.error(f"Error during job extraction for {job_id}: {e}")
             return None
+
+    def _extract_from_page_text(self, job: JobDetails, page_text: str) -> JobDetails:
+        """Uses LLM to extract structured data from raw page text when selectors fail."""
+        logger.info(f"Using LLM fallback extraction for job {job.id}...")
+
+        prompt = f"""
+        Extract job details from the following LinkedIn page text. 
+        Focus on the Title, Company, Location, Description, Salary, and Seniority.
+
+        Page Text:
+        {page_text}
+
+        Output the result ONLY as a JSON object with these keys:
+        - "title": job title
+        - "company": company name
+        - "location": location
+        - "description": full job description
+        - "salary": salary range if mentioned
+        - "seniority": seniority level
+        - "employment_type": e.g. Full-time, Contract
+        """
+
+        try:
+            extracted = self.llm.generate_json(prompt)
+            if extracted:
+                job.title = extracted.get("title") or job.title
+                job.company = extracted.get("company") or job.company
+                job.location = extracted.get("location") or job.location
+                job.description = extracted.get("description") or job.description
+                job.salary = extracted.get("salary") or job.salary
+                job.seniority_level = extracted.get("seniority") or job.seniority_level
+                job.employment_type = extracted.get("employment_type") or job.employment_type
+        except Exception as e:
+            logger.warning(f"LLM extraction fallback failed for job {job.id}: {e}")
+
+        return job
+
+    def _get_best_locator(self, root: Any, selectors: List[str]) -> Optional[Any]:
+        """Helper to find the first matching locator from a list of selectors."""
+        for selector in selectors:
+            try:
+                locator = root.locator(selector)
+                if locator.count() > 0:
+                    return locator.first
+            except Exception:
+                continue
+        return None
 
     def _get_text(self, root: Any, selectors: List[str]) -> str:
         """Helper to try multiple selectors and return the first found text."""
@@ -241,13 +317,14 @@ class JobDetailsExtractor:
                 continue
         return ""
 
-    def extract_multiple_jobs(self, job_list: List[Any], delay: float = 2.0) -> List[JobDetails]:
+    def extract_multiple_jobs(self, job_list: List[Any], delay: float = 2.0, force: bool = False) -> List[JobDetails]:
         """
         Extracts details for multiple jobs.
 
         Args:
             job_list: List of objects/dicts with 'id' and 'link'.
             delay: Delay in seconds between requests.
+            force: If True, ignore cache and re-scrape.
 
         Returns:
             List of JobDetails.
@@ -260,7 +337,7 @@ class JobDetailsExtractor:
             if not jid or not jlink:
                 continue
 
-            details = self.extract_job_details(jid, jlink)
+            details = self.extract_job_details(jid, jlink, fallback_data=job, force=force)
             if details:
                 results.append(details)
 

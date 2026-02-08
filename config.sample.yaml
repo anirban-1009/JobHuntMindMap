@@ -20,6 +20,9 @@ user:
   # Path to your LinkedIn Data Export (CSV)
   # Download from: LinkedIn > Settings > Data Privacy > Get a copy of your data (Connections)
   linkedin_connections_path: "data/Connections.csv"
+  
+  # Path to store interaction tracking (manual metadata)
+  linkedin_metadata_path: "data/network_metadata.json"
 
 # ==============================================================================
 # SECTION 2: Job Search Criteria

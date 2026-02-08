@@ -4,6 +4,14 @@ from typing import Any, Dict, List, Optional
 
 from src.core.constants import LINKEDIN_JOBS_SEARCH_URL, ExperienceLevel, JobType, LocationType
 from src.ingest.browser_manager import BrowserManager
+from src.ingest.selectors import (
+    LOGIN_MODAL_SELECTORS,
+    SEARCH_CARD_COMPANY_SELECTORS,
+    SEARCH_CARD_LOCATION_SELECTORS,
+    SEARCH_CARD_TITLE_SELECTORS,
+    SEARCH_JOB_CARD_SELECTORS,
+    SEARCH_RESULTS_LIST_SELECTORS,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -102,21 +110,12 @@ class JobSearcher:
             logger.error("LinkedIn login wall detected. Please ensure session.json is valid.")
             return []
 
-        # Try multiple selectors for the results list
-        results_selectors = [
-            ".jobs-search-results-list",
-            "ul.jobs-search__results-list",
-            ".scaffold-layout__list-container",
-            "ul.scaffold-layout__list-container",
-            ".jobs-search-two-pane__job-section",
-            "section.jobs-search-results-list",
-        ]
         found_selector = None
 
-        for selector in results_selectors:
+        for selector in SEARCH_RESULTS_LIST_SELECTORS:
             try:
                 # Wait longer for the first few selectors
-                wait_time = 5000 if selector in results_selectors[:3] else 1000
+                wait_time = 5000 if selector in SEARCH_RESULTS_LIST_SELECTORS[:3] else 1000
                 page.wait_for_selector(selector, timeout=wait_time)
                 found_selector = selector
                 logger.info(f"Found results list container: {selector}")
@@ -139,7 +138,7 @@ class JobSearcher:
                 job_cards = page.locator(card_detect_selector).all()
             else:
                 # Check for modal login wall or security check
-                if page.locator(".modal--contextual-sign-in, .authwall-modal, .login-modal").count() > 0:
+                if page.locator(", ".join(LOGIN_MODAL_SELECTORS)).count() > 0:
                     logger.error(
                         "LinkedIn login modal or authwall detected. Please run 'login' to update session.json."
                     )
@@ -157,7 +156,7 @@ class JobSearcher:
 
             # Determine card selector based on found list selector
             # Standard items or any card-like element inside the container
-            card_selector = ".jobs-search-results-list__item, li, .job-card-container, .base-card, .job-search-card"
+            card_selector = ", ".join(SEARCH_JOB_CARD_SELECTORS)
 
             job_cards = page.locator(found_selector).locator(card_selector).all()
         results = []
@@ -165,33 +164,15 @@ class JobSearcher:
         for card in job_cards:
             try:
                 # Try multiple selectors for each field
-                title_selectors = [
-                    ".job-card-list__title",
-                    ".base-search-card__title",
-                    ".job-search-card__title",
-                    "h3",
-                    "h4",
-                    "a",
-                ]
-                company_selectors = [
-                    ".job-card-container__primary-description",
-                    ".base-search-card__subtitle",
-                    ".job-search-card__subtitle",
-                    ".topcard__org-name-link",
-                    ".job-card-container__company-name",
-                ]
-                location_selectors = [
-                    ".job-card-container__metadata-item",
-                    ".job-search-card__location",
-                    ".base-search-card__metadata",
-                ]
-
-                title_elem = self._get_best_locator(card, title_selectors)
+                title_elem = self._get_best_locator(card, SEARCH_CARD_TITLE_SELECTORS)
                 if not title_elem:
                     logger.debug("Skipping job card: title element not found.")
                     continue
 
-                title = title_elem.inner_text().strip()
+                # Clean up title - sometimes it contains duplicate text or screen reader text
+                title_lines = [line.strip() for line in title_elem.inner_text().split("\n") if line.strip()]
+                title = title_lines[0] if title_lines else ""
+
                 link = title_elem.get_attribute("href")
 
                 # If title is not a link, try to find a link inside the card
@@ -219,11 +200,19 @@ class JobSearcher:
                     logger.debug(f"Skipping job card '{title}': job_id not found in link {link}")
                     continue
 
-                company_elem = self._get_best_locator(card, company_selectors)
-                company = company_elem.inner_text().strip() if company_elem else "Unknown"
+                company_elem = self._get_best_locator(card, SEARCH_CARD_COMPANY_SELECTORS)
+                if company_elem:
+                    comp_lines = [line.strip() for line in company_elem.inner_text().split("\n") if line.strip()]
+                    company = comp_lines[0] if comp_lines else "Unknown"
+                else:
+                    company = "Unknown"
 
-                location_elem = self._get_best_locator(card, location_selectors)
-                location_str = location_elem.inner_text().strip() if location_elem else ""
+                location_elem = self._get_best_locator(card, SEARCH_CARD_LOCATION_SELECTORS)
+                if location_elem:
+                    loc_lines = [line.strip() for line in location_elem.inner_text().split("\n") if line.strip()]
+                    location_str = loc_lines[0] if loc_lines else ""
+                else:
+                    location_str = ""
 
                 results.append(
                     JobSearchResult(id=job_id, title=title, company=company, link=link or "", location=location_str)
