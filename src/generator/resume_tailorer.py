@@ -88,8 +88,19 @@ class ResumeTailorer:
         Returns:
             str: Rendered LaTeX content.
         """
+        sanitized_data = self._deep_sanitize(tailored_data)
         template = self.jinja_env.get_template(template_name)
-        return template.render(**tailored_data)
+        return template.render(**sanitized_data)
+
+    def _deep_sanitize(self, data: Any) -> Any:
+        """Recursively sanitize data for LaTeX."""
+        if isinstance(data, str):
+            return self._sanitize_latex(data)
+        elif isinstance(data, list):
+            return [self._deep_sanitize(item) for item in data]
+        elif isinstance(data, dict):
+            return {k: self._deep_sanitize(v) for k, v in data.items()}
+        return data
 
     def compile_pdf(self, latex_content: str, output_path: Path) -> Path:
         """
