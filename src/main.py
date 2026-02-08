@@ -298,5 +298,150 @@ def network(job_id: str, config: str):
         sys.exit(1)
 
 
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--all", "score_all", is_flag=True, default=False, help="Score all cached jobs")
+@click.argument("job_id", required=False)
+def score(config: str, score_all: bool, job_id: Optional[str]):
+    """
+    Score jobs against your resume.
+
+    You must provide either a JOB_ID or use --all.
+    """
+    import json
+    from dataclasses import asdict
+
+    from src.core.ai import get_llm_client
+    from src.core.relevance_scorer import RelevanceScorer
+    from src.ingest.job_details_extractor import JobDetailsExtractor
+    from src.ingest.resume_parser import PDFResumeParser
+
+    cfg_path = pathlib.Path(config)
+    if not cfg_path.exists():
+        click.echo(Fore.RED + f"Config file not found: {cfg_path}")
+        sys.exit(1)
+
+    with open(cfg_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    user_cfg = cfg.get("user", {})
+    resume_path = pathlib.Path(user_cfg.get("resume_path", "data/resume.pdf"))
+
+    if not resume_path.exists():
+        # Try sample
+        resume_path = pathlib.Path("data/sample_resume.pdf")
+        if not resume_path.exists():
+            click.echo(Fore.RED + "Resume not found in config or default data/resume.pdf")
+            sys.exit(1)
+
+    try:
+        click.echo(Fore.CYAN + f"Parsing resume: {resume_path}")
+        resume_parser = PDFResumeParser()
+        resume_text = resume_parser.extract_text(resume_path)
+
+        ai_cfg = cfg.get("ai", {})
+        llm = get_llm_client(ai_cfg)
+        scorer = RelevanceScorer(llm)
+        extractor = JobDetailsExtractor(None)  # No browser needed
+
+        jobs_to_score = []
+        if job_id:
+            job = extractor.get_cached_job(job_id)
+            if not job:
+                click.echo(Fore.RED + f"Job {job_id} not found in cache.")
+                sys.exit(1)
+            jobs_to_score.append(job)
+        elif score_all:
+            # Find all regular json files (not score/analysis ones)
+            # This is tricky because we need to differentiate.
+            # Convention: {id}.json is job, {id}_analysis.json is analysis.
+            for f in extractor.cache_dir.glob("*.json"):
+                if "_" not in f.stem and f.stem.isdigit():
+                    job = extractor.get_cached_job(f.stem)
+                    if job:
+                        jobs_to_score.append(job)
+        else:
+            click.echo(Fore.YELLOW + "Please provide a JOB_ID or use --all")
+            return
+
+        click.echo(Fore.CYAN + f"Scoring {len(jobs_to_score)} jobs...")
+
+        for job in jobs_to_score:
+            result = scorer.score_job(resume_text, job)
+            if result:
+                output_path = extractor.cache_dir / f"{job.id}_analysis.json"
+                with open(output_path, "w") as f:
+                    json.dump(asdict(result), f, indent=2)
+
+                color = Fore.GREEN if result.score >= 70 else Fore.YELLOW if result.score >= 40 else Fore.RED
+                click.echo(f"Job {job.id}: {color}Score {result.score}{Fore.RESET} - {result.reasoning}")
+            else:
+                click.echo(Fore.RED + f"Failed to score job {job.id}")
+
+    except Exception as e:
+        click.echo(Fore.RED + f"Scoring failed: {e}")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--min-score", default=0, help="Minimum score of jobs to include in analysis")
+def analyze_gaps(config: str, min_score: int):
+    """
+    Analyze missing skills from scored jobs to generate an improvement plan.
+    """
+    import json
+
+    from src.core.ai import get_llm_client
+    from src.core.gap_analysis import GapAnalyzer
+    from src.core.relevance_scorer import ScoringResult
+
+    cfg_path = pathlib.Path(config)
+    if not cfg_path.exists():
+        click.echo(Fore.RED + f"Config file not found: {cfg_path}")
+        sys.exit(1)
+
+    with open(cfg_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    try:
+        ai_cfg = cfg.get("ai", {})
+        llm = get_llm_client(ai_cfg)
+        analyzer = GapAnalyzer(llm)
+        cache_dir = pathlib.Path("data/job_cache")
+
+        results = []
+        for f in cache_dir.glob("*_analysis.json"):
+            with open(f, "r") as jf:
+                data = json.load(jf)
+                res = ScoringResult(**data)
+                if res.score >= min_score:
+                    results.append(res)
+
+        if not results:
+            click.echo(Fore.YELLOW + f"No scored jobs found (with min_score >= {min_score}). Run 'score' first.")
+            return
+
+        click.echo(Fore.CYAN + f"Analyzing gaps across {len(results)} jobs...")
+        gap_result = analyzer.analyze_gaps(results)
+
+        if gap_result:
+            click.echo(Fore.GREEN + "\n=== Top Missing Skills ===")
+            for skill, count in gap_result.skill_frequency.items():
+                click.echo(f"- {skill}: {count} jobs")
+
+            click.echo(Fore.CYAN + "\n=== Improvement Plan ===")
+            click.echo(gap_result.improvement_plan)
+        else:
+            click.echo(Fore.YELLOW + "Analysis returned no results.")
+
+    except Exception as e:
+        click.echo(Fore.RED + f"Gap analysis failed: {e}")
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cli()
