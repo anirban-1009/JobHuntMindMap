@@ -1,0 +1,15 @@
+# {{ person.full_name }}
+
+- **Title:** {{ person.position }}
+- **Company:** [[{{ person.company|replace(' ', '_') if person.company else 'Unknown_Company' }}]]
+- **Connected On:** {{ person.connected_on }}
+- **Last Contacted:** {{ person.metadata.last_contacted or 'Never' }}
+- **Status:** #Network
+
+## Achievements
+{% for achievement in person.metadata.achievements %}
+- {{ achievement }}
+{% endfor %}
+
+## Notes
+{{ person.metadata.notes or '' }}

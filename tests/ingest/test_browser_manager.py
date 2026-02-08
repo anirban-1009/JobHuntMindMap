@@ -77,3 +77,94 @@ class TestBrowserManager:
         manager = BrowserManager()
         with pytest.raises(ScraperError, match="Browser not started"):
             manager.goto("http://example.com")
+
+    @patch("src.ingest.browser_manager.sync_playwright")
+    def test_start_exception(self, mock_playwright_sync):
+        """Test that start() raises ScraperError on failure."""
+        mock_playwright_sync.side_effect = Exception("Playwright Error")
+        manager = BrowserManager()
+
+        with pytest.raises(ScraperError, match="Failed to start browser"):
+            manager.start()
+
+    def test_goto_exception(self):
+        """Test that goto() raises ScraperError on navigation failure."""
+        manager = BrowserManager()
+        # Mock attributes directly since we don't start it
+        manager.page = MagicMock()
+        manager.page.goto.side_effect = Exception("Nav Error")
+
+        with pytest.raises(ScraperError, match="Failed to navigate"):
+            manager.goto("http://example.com")
+
+    def test_context_manager(self):
+        """Test that BrowserManager works as a context manager."""
+        with patch.object(BrowserManager, "start") as mock_start, patch.object(BrowserManager, "stop") as mock_stop:
+            with BrowserManager():
+                pass
+
+            mock_start.assert_called_once()
+            mock_stop.assert_called_once()
+
+    @patch("src.ingest.browser_manager.sync_playwright")
+    def test_login_manual_already_logged_in(self, mock_playwright, tmp_path):
+        """Test login_manual exits early if already logged in."""
+        manager = BrowserManager(session_path=tmp_path / "session.json")
+
+        # Setup mocks
+        mock_page = MagicMock()
+        # Mock success selector found
+        mock_page.locator.return_value.count.return_value = 1
+
+        with patch.object(manager, "start"), patch.object(manager, "goto"), patch.object(manager, "page", mock_page):
+            manager.login_manual()
+
+            # verify we checked for login
+            mock_page.locator.assert_called_with(".global-nav")
+
+    @patch("src.ingest.browser_manager.sync_playwright")
+    def test_login_manual_wait_for_login(self, mock_playwright, tmp_path):
+        """Test login_manual waits for user to login."""
+        manager = BrowserManager(session_path=tmp_path / "session.json")
+
+        # Setup mocks
+        mock_page = MagicMock()
+        mock_context = MagicMock()
+        manager.context = mock_context
+
+        # Mock success selector NOT found initially
+        mock_page.locator.return_value.count.return_value = 0
+
+        with patch.object(manager, "start"), patch.object(manager, "goto"), patch.object(manager, "page", mock_page):
+            manager.login_manual()
+
+            # verify we waited for login
+            mock_page.wait_for_selector.assert_called_with(".global-nav", timeout=300000)
+            # verify we saved state
+            mock_context.storage_state.assert_called()
+
+    @patch("src.ingest.browser_manager.sync_playwright")
+    def test_login_manual_timeout(self, mock_playwright):
+        """Test login_manual raises error on timeout."""
+        manager = BrowserManager()
+
+        # Setup mocks
+        mock_page = MagicMock()
+        mock_page.locator.return_value.count.return_value = 0
+        mock_page.wait_for_selector.side_effect = Exception("Timeout")
+
+        with patch.object(manager, "start"), patch.object(manager, "goto"), patch.object(manager, "page", mock_page):
+            with pytest.raises(ScraperError, match="Login timeout"):
+                manager.login_manual()
+
+    def test_stop_no_errors(self):
+        """Test stop handles component teardown safely."""
+        manager = BrowserManager()
+        # No components initialized
+        manager.stop()  # Should not raise
+
+        # Partially initialized
+        manager.context = MagicMock()
+        manager.context.close.side_effect = Exception("Close error")  # Should be caught/logged
+
+        manager.stop()  # Should not raise

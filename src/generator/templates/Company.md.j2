@@ -1,0 +1,19 @@
+# {{ name }}
+
+- **Industry:** {{ industry }}
+- **Location:** {{ location }}
+- **Website:** [Link]({{ website }})
+- **Status:** #Company
+
+## Jobs
+{% for job in jobs %}
+- [[{{ job.filename }}|{{ job.title }}]] ({{ job.status }})
+{% endfor %}
+
+## Connections
+{% for person in people %}
+- [[{{ person.filename }}|{{ person.name }}]] - {{ person.title }}
+{% endfor %}
+
+## Notes
+- 
