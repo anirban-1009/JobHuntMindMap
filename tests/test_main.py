@@ -64,11 +64,11 @@ class TestMainCLI:
         assert "Error parsing YAML" in result.output
 
     @patch("src.main.BrowserManager")
-    def test_login_command(self, mock_browser_cls: MagicMock, runner: CliRunner) -> None:
+    def test_login_command(self, mock_browser_cls: MagicMock, runner: CliRunner, mock_config: str) -> None:
         """Verify the 'login' command initiates a manual browser session."""
         mock_browser = mock_browser_cls.return_value.__enter__.return_value
 
-        result = runner.invoke(login)
+        result = runner.invoke(login, ["--config", mock_config])
 
         assert result.exit_code == 0
         mock_browser.login_manual.assert_called_once()
