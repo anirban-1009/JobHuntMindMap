@@ -47,8 +47,8 @@
 
 % Sections formatting
 \titleformat{\section}{
-  \vspace{-4pt}\scshape\raggedright\large
-}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+  \vspace{-6pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-7pt}]
 
 % Ensure that generate pdf is machine readable/ATS parsable
 \pdfgentounicode=1
@@ -57,16 +57,16 @@
 % Custom commands
 \newcommand{\resumeItem}[1]{
   \item\small{
-    {#1 \vspace{-2pt}}
+    {#1 \vspace{-3pt}}
   }
 }
 
 \newcommand{\resumeSubheading}[4]{
-  \vspace{-1pt}\item
+  \vspace{-3pt}\item
     \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
       \textbf{#1} & #2 \\
       \textit{\small#3} & \textit{\small #4} \\
-    \end{tabular*}\vspace{-7pt}
+    \end{tabular*}\vspace{-8pt}
 }
 
 \newcommand{\resumeSubSubheading}[2]{
@@ -89,7 +89,7 @@
 
 \newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
 \newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
-\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}[itemsep=-3pt, parsep=0pt, topsep=0pt]}
 \newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
 
 %-------------------------------------------
@@ -102,10 +102,7 @@
 
 \begin{center}
     \textbf{\Huge \scshape {{ first_name }} {{ last_name }}} \\ \vspace{1pt}
-    \small {{ phone }} $|$ \href{mailto:{{ email }}}{\underline{ {{ email }} }} $|$ 
-    \href{https://{{ linkedin }}}{\underline{ {{ linkedin }} }} $|$
-    \href{https://{{ github }}}{\underline{ {{ github }} }}
-    {% if website %} $|$ \href{https://{{ website }}}{\underline{ {{ website }} }}{% endif %}
+    \small {{ phone }} $|$ \href{mailto:{{- email -}}}{\underline{ {{- email -}} }} $|$ \href{ {{- linkedin -}} }{\underline{ {{- linkedin -}} }}{% if github %} $|$ \href{ {{- github -}} }{\underline{ {{- github -}} }}{% endif %}{% if website %} $|$ \href{ {{- website -}} }{\underline{ {{- website -}} }}{% endif %}
 \end{center}
 
 
@@ -147,10 +144,12 @@
     \resumeSubHeadingListStart
       {% for project in projects %}
       \resumeProjectHeading
-          {\textbf{ {{ project.name }} } $|$ \emph{ {{ project.technologies }} }}
-          { {{ project.dates|default('') }} }
+          {\textbf{ {{ project.name }} } $|$ \emph{ {{ project.technologies|join(', ') }} }}
+          { {{ project.date|default('') }} }
           \resumeItemListStart
-            \resumeItem{ {{ project.description }} }
+            {% for bullet in project.bullets %}
+            \resumeItem{ {{ bullet }} }
+            {% endfor %}
           \resumeItemListEnd
       {% endfor %}
     \resumeSubHeadingListEnd

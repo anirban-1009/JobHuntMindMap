@@ -9,11 +9,13 @@
         .job-header { background: #f9f9f9; padding: 10px; border-bottom: 1px solid #ddd; }
         .job-title { margin: 0; color: #2980b9; font-size: 1.2em; }
         .company { font-weight: bold; color: #555; }
+        .job-id { font-size: 0.85em; color: #888; margin-top: 5px; }
         .score { display: inline-block; padding: 3px 8px; border-radius: 3px; font-weight: bold; font-size: 0.9em; }
         .score-high { background-color: #27ae60; color: white; }
         .score-mid { background-color: #f39c12; color: white; }
         .job-body { padding: 10px; }
         .reasoning { font-style: italic; color: #666; font-size: 0.9em; margin-top: 10px; }
+        .resume-note { background: #e8f5e9; padding: 8px; border-radius: 3px; font-size: 0.85em; color: #2e7d32; margin-top: 10px; }
         .footer { text-align: center; font-size: 0.8em; color: #888; margin-top: 20px; }
         .button { display: inline-block; background-color: #2980b9; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-top: 15px; }
     </style>
@@ -25,12 +27,14 @@
         </div>
         <p>Hi {{ user_name }},</p>
         <p>Here are the latest high-matching job opportunities found for you today:</p>
+        <p><strong>📎 Tailored resumes attached for each job opportunity!</strong></p>
         
         {% for item in jobs %}
         <div class="job-card">
             <div class="job-header">
                 <h2 class="job-title">{{ item.job.title }}</h2>
                 <div class="company">{{ item.job.company }} | {{ item.job.location }}</div>
+                <div class="job-id">Job ID: {{ item.job.id }}</div>
                 <div class="score {% if item.score.score >= 80 %}score-high{% else %}score-mid{% endif %}">
                     Match Score: {{ item.score.score }}%
                 </div>
@@ -44,6 +48,9 @@
                 </ul>
                 <div class="reasoning">
                     "{{ item.score.reasoning }}"
+                </div>
+                <div class="resume-note">
+                    ✅ Tailored resume attached: <strong>Resume_{{ item.job.id }}.pdf</strong>
                 </div>
                 <a href="{{ item.job.link }}" class="button">View Job</a>
             </div>

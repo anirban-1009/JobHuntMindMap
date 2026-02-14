@@ -41,58 +41,117 @@ class RelevanceScorer:
         Returns:
             ScoringResult if successful, None otherwise.
         """
-        prompt = self._construct_prompt(resume_text, job_details)
-        system_instruction = (
-            "You are an expert career coach and technical recruiter. "
-            "Analyze the job description against the resume provided. "
-            "Be objective and critical. Provide high-quality feedback."
+        logger.info(f"Scoring job '{job_details.title}' at '{job_details.company}'")
+
+        # Try up to 3 times with progressively stricter prompting
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                prompt = self._construct_prompt(resume_text, job_details, attempt)
+                system_instruction = (
+                    "You are an expert career coach and technical recruiter. "
+                    "Analyze the job description against the resume provided. "
+                    "Be objective and critical. Provide high-quality feedback. "
+                    "CRITICAL: Respond ONLY with valid JSON. No markdown, no explanations, just JSON."
+                )
+
+                json_response = self.llm.generate_json(prompt, system_instruction=system_instruction)
+
+                if not json_response:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Empty JSON response (attempt {attempt + 1}/{max_retries}). Retrying...")
+                        continue
+                    else:
+                        logger.error("Empty JSON response from LLM after all retries.")
+                        return self._create_fallback_result(job_details)
+
+                # Validate required fields
+                if "score" not in json_response or "reasoning" not in json_response:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Incomplete JSON response (attempt {attempt + 1}/{max_retries}). Retrying...")
+                        continue
+                    else:
+                        logger.error("Incomplete JSON response after all retries.")
+                        return self._create_fallback_result(job_details)
+
+                return ScoringResult(
+                    score=int(json_response.get("score", 0)),
+                    matching_skills=json_response.get("matching_skills", []),
+                    missing_skills=json_response.get("missing_skills", []),
+                    reasoning=json_response.get("reasoning", ""),
+                )
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Error during relevance scoring (attempt {attempt + 1}/{max_retries}): {e}. Retrying..."
+                    )
+                    continue
+                else:
+                    logger.error(f"Error during relevance scoring after all retries: {e}")
+                    return self._create_fallback_result(job_details)
+
+        return self._create_fallback_result(job_details)
+
+    def _create_fallback_result(self, job_details: JobDetails) -> ScoringResult:
+        """Creates a default result when LLM scoring fails."""
+        return ScoringResult(
+            score=0,
+            matching_skills=[],
+            missing_skills=["Unable to analyze - LLM scoring failed"],
+            reasoning=f"Failed to score this job automatically. Please review manually: {job_details.title} at {job_details.company}",
         )
 
-        try:
-            logger.info(f"Scoring job '{job_details.title}' at '{job_details.company}'")
-            json_response = self.llm.generate_json(prompt, system_instruction=system_instruction)
-
-            if not json_response:
-                logger.error("Empty JSON response from LLM during scoring.")
-                return None
-
-            return ScoringResult(
-                score=int(json_response.get("score", 0)),
-                matching_skills=json_response.get("matching_skills", []),
-                missing_skills=json_response.get("missing_skills", []),
-                reasoning=json_response.get("reasoning", ""),
-            )
-        except Exception as e:
-            logger.error(f"Error during relevance scoring: {e}")
-            return None
-
-    def _construct_prompt(self, resume_text: str, job_details: JobDetails) -> str:
+    def _construct_prompt(self, resume_text: str, job_details: JobDetails, attempt: int = 0) -> str:
         """Constructs the prompt for the LLM."""
-        return f"""
-Analyze the suitability of this candidate for the following job.
 
-### Resume Content:
-{resume_text}
+        # Truncate resume and job description if too long to avoid context overflow
+        max_resume_length = 2000
+        max_desc_length = 1500
 
-### Job Title:
-{job_details.title}
+        resume_excerpt = resume_text[:max_resume_length] + ("..." if len(resume_text) > max_resume_length else "")
+        job_desc_excerpt = job_details.description[:max_desc_length] + (
+            "..." if len(job_details.description) > max_desc_length else ""
+        )
 
-### Company:
-{job_details.company}
+        # For retries, be EXTREMELY explicit
+        if attempt > 0:
+            return f"""CRITICAL: Your last response was invalid. Respond with PURE JSON ONLY.
 
-### Job Description:
-{job_details.description}
+DO NOT use ```json or ``` markdown.
+DO NOT add any text before or after the JSON.
+START your response with {{ and END with }}
 
-### Evaluation Criteria:
-1. **Score (0-100)**: How well do the candidate's skills and experience align with the job requirements?
-2. **Matching Skills**: List 3-7 key technical or soft skills found in both the resume and the job.
-3. **Missing Skills**: List 3-7 key requirements from the job that are missing or weak in the resume.
-4. **Reasoning**: Provide a 2-3 sentence explanation for the score.
+Analyze this candidate:
 
-### Output Format:
-Provide the result ONLY as a raw JSON object with these keys:
-- "score": integer
-- "matching_skills": list of strings
-- "missing_skills": list of strings
-- "reasoning": string
-"""
+RESUME: {resume_excerpt}
+
+JOB: {job_details.title} at {job_details.company}
+DESCRIPTION: {job_desc_excerpt}
+
+Respond with THIS EXACT FORMAT (fill in your values):
+{{"score": 80, "matching_skills": ["skill1", "skill2", "skill3"], "missing_skills": ["gap1", "gap2"], "reasoning": "Brief explanation here"}}"""
+
+        # First attempt - clear but friendly
+        return f"""IMPORTANT: You must respond with ONLY a valid JSON object. No markdown, no code blocks, no explanations.
+
+Analyze this candidate's resume against the job requirements and provide a JSON response.
+
+RESUME:
+{resume_excerpt}
+
+JOB TITLE: {job_details.title}
+COMPANY: {job_details.company}
+
+JOB DESCRIPTION:
+{job_desc_excerpt}
+
+Evaluate:
+1. Score (0-100): Overall match between resume and job requirements
+2. Matching Skills: 3-7 skills present in both resume and job
+3. Missing Skills: 3-7 key job requirements missing from resume  
+4. Reasoning: 2-3 sentences explaining the score
+
+RESPONSE FORMAT - Copy this structure exactly:
+{{"score": 75, "matching_skills": ["Python", "REST APIs", "Docker"], "missing_skills": ["Kubernetes", "GraphQL"], "reasoning": "Strong backend experience with Python and APIs. Missing some modern DevOps tools."}}
+
+Your response (JSON only, no markdown):"""

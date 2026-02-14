@@ -55,7 +55,11 @@ class TestRelevanceScorer:
 
         result = scorer.score_job("Resume text", sample_job)
 
-        assert result is None
+        # Should return fallback result instead of None
+        assert isinstance(result, ScoringResult)
+        assert result.score == 0
+        assert "Unable to analyze - LLM scoring failed" in result.missing_skills
+        assert "Failed to score this job automatically" in result.reasoning
 
     def test_score_job_exception(self, scorer, mock_llm, sample_job):
         """Test behavior when LLM client raises an exception."""
@@ -63,4 +67,7 @@ class TestRelevanceScorer:
 
         result = scorer.score_job("Resume text", sample_job)
 
-        assert result is None
+        # Should return fallback result instead of None
+        assert isinstance(result, ScoringResult)
+        assert result.score == 0
+        assert "Unable to analyze - LLM scoring failed" in result.missing_skills

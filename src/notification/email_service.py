@@ -1,4 +1,5 @@
 import os
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -66,7 +67,7 @@ class EmailService:
 
     def send_job_digest(self, scored_jobs: List[Dict[str, Any]]) -> bool:
         """
-        Generates and sends an HTML email digest of scored jobs.
+        Generates and sends an HTML email digest of scored jobs with tailored resumes attached.
 
         Args:
             scored_jobs: List of dictionaries containing 'job' (JobDetails) and 'score' (ScoringResult).
@@ -88,10 +89,13 @@ class EmailService:
 
         try:
             # Prepare message
-            msg = MIMEMultipart("alternative")
+            msg = MIMEMultipart("mixed")
             msg["Subject"] = f"Job Digest: {len(scored_jobs)} New Matches Found"
             msg["From"] = self.from_email
             msg["To"] = self.recipient_email
+
+            # Create the email body
+            msg_body = MIMEMultipart("alternative")
 
             # Render HTML
             template = self.jinja_env.get_template("job_digest.html.j2")
@@ -99,8 +103,27 @@ class EmailService:
 
             # Add body parts
             text_fallback = f"Hi {self.user_name},\n\nYou have {len(scored_jobs)} new job matches."
-            msg.attach(MIMEText(text_fallback, "plain"))
-            msg.attach(MIMEText(html_content, "html"))
+            msg_body.attach(MIMEText(text_fallback, "plain"))
+            msg_body.attach(MIMEText(html_content, "html"))
+
+            msg.attach(msg_body)
+
+            # Generate and attach tailored resumes for each job
+            logger.info("Generating tailored resumes for email attachments...")
+            for item in scored_jobs:
+                job = item["job"]
+                try:
+                    resume_path = self._generate_tailored_resume(job)
+                    if resume_path and resume_path.exists():
+                        with open(resume_path, "rb") as f:
+                            pdf_attachment = MIMEApplication(f.read(), _subtype="pdf")
+                            pdf_attachment.add_header(
+                                "Content-Disposition", "attachment", filename=f"Resume_{job.id}.pdf"
+                            )
+                            msg.attach(pdf_attachment)
+                            logger.info(f"Attached resume for job {job.id}")
+                except Exception as e:
+                    logger.warning(f"Failed to attach resume for job {job.id}: {e}")
 
             # Send via Provider
             logger.info(f"Sending email digest via {self.provider_type} to {self.recipient_email}...")
@@ -109,3 +132,57 @@ class EmailService:
         except Exception as e:
             logger.error(f"Failed to send email digest: {e}")
             return False
+
+    def _generate_tailored_resume(self, job) -> Path:
+        """
+        Generates a tailored resume for a specific job.
+
+        Args:
+            job: JobDetails object
+
+        Returns:
+            Path to the generated PDF resume
+        """
+        try:
+            import json
+
+            from src.generator.resume_tailorer import ResumeTailorer
+
+            output_path = Path("output/resumes") / f"Resume_{job.id}.pdf"
+
+            # Check if resume already exists
+            if output_path.exists():
+                logger.info(f"Using existing tailored resume for job {job.id}")
+                return output_path
+
+            # Load resume data
+            resume_json_path = Path("data/resume.json")
+            if not resume_json_path.exists():
+                logger.error(f"Resume data not found at {resume_json_path}")
+                return None
+
+            with open(resume_json_path, "r") as f:
+                resume_data = json.load(f)
+
+            # Generate new resume
+            logger.info(f"Generating tailored resume for job {job.id}")
+            tailorer = ResumeTailorer(self.config)
+
+            # Construct job description
+            job_desc = f"Title: {job.title}\nCompany: {job.company}\n\n{job.description}"
+
+            # Tailor the resume
+            tailored_data = tailorer.tailor_resume(resume_data, job_desc)
+
+            # Generate LaTeX
+            latex = tailorer.generate_latex(tailored_data)
+
+            # Compile PDF
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            result = tailorer.compile_pdf(latex, output_path)
+
+            return result if result else None
+
+        except Exception as e:
+            logger.error(f"Error generating tailored resume for job {job.id}: {e}")
+            return None

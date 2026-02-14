@@ -190,6 +190,8 @@ class MindMapApp:
             extractor = JobDetailsExtractor(None)
 
             jobs_to_score = []
+            skipped_count = 0
+
             if job_id:
                 job = extractor.get_cached_job(job_id)
                 if job:
@@ -197,9 +199,18 @@ class MindMapApp:
             elif score_all:
                 for f in extractor.cache_dir.glob("*.json"):
                     if "_" not in f.stem and f.stem.isdigit():
+                        # Check if analysis already exists
+                        analysis_path = extractor.cache_dir / f"{f.stem}_analysis.json"
+                        if analysis_path.exists():
+                            skipped_count += 1
+                            continue
+
                         job = extractor.get_cached_job(f.stem)
                         if job:
                             jobs_to_score.append(job)
+
+            if skipped_count > 0:
+                click.echo(Fore.YELLOW + f"Skipping {skipped_count} already scored jobs.")
 
             click.echo(Fore.CYAN + f"Scoring {len(jobs_to_score)} jobs...")
             for job in jobs_to_score:

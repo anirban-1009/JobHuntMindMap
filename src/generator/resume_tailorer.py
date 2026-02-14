@@ -42,36 +42,76 @@ class ResumeTailorer:
         Returns:
             Dict[str, Any]: Tailored resume data.
         """
+        import json
+
         logger.info("Tailoring resume using LLM...")
 
-        # Simplified for now: We ask the LLM to rewrite the summary and bullet points
-        # In a real implementation, we would send the full structured data or raw text.
+        # Try up to 3 times with progressively stricter prompting
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                prompt = self._build_tailoring_prompt(resume_data, job_description)
+                response = self.llm.generate(prompt)
 
-        prompt = self._build_tailoring_prompt(resume_data, job_description)
-        response = self.llm.generate(prompt)
+                if not response or not response.strip():
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Empty response from LLM (attempt {attempt + 1}/{max_retries}). Retrying...")
+                        continue
+                    else:
+                        logger.error("Empty response from LLM after all retries")
+                        return resume_data
 
-        # Parse the LLM response. We expect JSON for structured updates.
-        # This is a placeholder for actual parsing logic.
-        try:
-            import json
+                # Extract JSON from potential markdown tags
+                cleaned_response = response
+                if "```json" in cleaned_response:
+                    cleaned_response = cleaned_response.split("```json")[1].split("```")[0].strip()
+                elif "```" in cleaned_response:
+                    cleaned_response = cleaned_response.split("```")[1].split("```")[0].strip()
 
-            # Extract JSON from potential markdown tags
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0].strip()
+                # Try to parse JSON
+                tailored_updates = json.loads(cleaned_response)
 
-            tailored_updates = json.loads(response)
+                # Validate that we got the expected fields
+                if "experience" not in tailored_updates:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Missing 'experience' field (attempt {attempt + 1}/{max_retries}). Retrying...")
+                        continue
+                    else:
+                        logger.error("Missing 'experience' field after all retries")
+                        return resume_data
 
-            # Merge updates into resume_data
-            tailored_data = resume_data.copy()
-            tailored_data.update(tailored_updates)
-            return tailored_data
+                # Merge updates into resume_data
+                tailored_data = resume_data.copy()
+                tailored_data.update(tailored_updates)
 
-        except Exception as e:
-            logger.error(f"Failed to parse LLM response for tailoring: {e}")
-            logger.debug(f"Raw response: {response}")
-            return resume_data  # Fallback to original
+                logger.info(
+                    f"Successfully tailored resume with {len(tailored_updates.get('experience', []))} experience entries"
+                )
+                return tailored_data
+
+            except json.JSONDecodeError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"JSON parse error (attempt {attempt + 1}/{max_retries}): {e}. Retrying...")
+                    logger.debug(f"Problematic response: {response[:500]}...")
+                    continue
+                else:
+                    logger.error(f"Failed to parse LLM response after all retries: {e}")
+                    logger.debug(f"Raw response: {response[:1000]}...")
+                    return resume_data  # Fallback to original
+
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        f"Error during resume tailoring (attempt {attempt + 1}/{max_retries}): {e}. Retrying..."
+                    )
+                    continue
+                else:
+                    logger.error(f"Failed to tailor resume after all retries: {e}")
+                    logger.debug(f"Raw response: {response[:1000] if 'response' in locals() else 'N/A'}...")
+                    return resume_data  # Fallback to original
+
+        # Should never reach here, but just in case
+        return resume_data
 
     def generate_latex(self, tailored_data: Dict[str, Any], template_name: str = "resume_master.tex.j2") -> str:
         """
@@ -85,6 +125,15 @@ class ResumeTailorer:
             str: Rendered LaTeX content.
         """
         sanitized_data = self._deep_sanitize(tailored_data)
+
+        # Inject raw versions of URL fields to prevent escaping in \href
+        # This is critical for URLs containing underscores, which sanitizer escapes
+        if isinstance(sanitized_data, dict):
+            url_fields = ["email", "linkedin", "github", "website"]
+            for field in url_fields:
+                if field in tailored_data:
+                    sanitized_data[f"{field}_raw"] = tailored_data[field]
+
         template = self.jinja_env.get_template(template_name)
         return template.render(**sanitized_data)
 
@@ -147,35 +196,90 @@ class ResumeTailorer:
 
     def _build_tailoring_prompt(self, resume_data: Dict[str, Any], job_description: str) -> str:
         """Prepares the prompt for the LLM."""
-        return f"""
-        You are an expert career coach and resume writer.
-        I will provide you with a structured resume data and a job description.
-        Your task is to rewrite the 'professional_summary' and the 'bullets' in the 'experience' section to better align with the job description.
-        Focus on matching keywords, highlighting relevant achievements, and removing irrelevant details.
-        
-        Return ONLY a JSON object with the following keys:
-        - "professional_summary": (string) The rewritten summary.
-        - "experience": (list of dicts) Each dict must have 'title', 'company', and 'bullets' (list of strings).
-        
-        RESUME DATA:
-        {resume_data}
-        
-        JOB DESCRIPTION:
-        {job_description}
-        """
+        num_experiences = len(resume_data.get("experience", []))
+        return f"""You are an expert career coach and resume writer.
+
+CRITICAL RULES - DO NOT VIOLATE:
+1. DO NOT make up, invent, or fabricate ANY information
+2. DO NOT add new projects, companies, or experiences that don't exist in the resume
+3. DO NOT change dates, job titles, or company names
+4. DO NOT add technologies or skills that aren't mentioned in the original resume
+5. DO NOT remove or combine any job experiences - ALL {num_experiences} jobs MUST be in the output
+6. If someone worked at the same company twice, keep BOTH entries separate
+7. ONLY rephrase and emphasize existing achievements to match the job description
+
+Your ONLY task is to:
+- Reword the professional_summary to highlight relevant skills for this job
+- Rephrase existing bullet points to emphasize keywords from the job description
+- You may REORDER bullet points within each job to put most relevant ones first
+- You may REMOVE individual bullet points that are less relevant
+- You MUST include ALL {num_experiences} experience entries from the resume
+
+RESUME DATA:
+{resume_data}
+
+JOB DESCRIPTION:
+{job_description}
+
+Return ONLY valid JSON with this structure (showing ALL {num_experiences} jobs):
+{{
+  "professional_summary": "Reworded summary emphasizing relevant skills",
+  "experience": [
+    {{
+      "title": "EXACT same title from resume",
+      "company": "EXACT same company from resume",
+      "dates": "EXACT same dates from resume",
+      "location": "EXACT same location from resume",
+      "bullets": ["Rephrased bullet 1", "Rephrased bullet 2"]
+    }},
+    ... include ALL {num_experiences} jobs here ...
+  ]
+}}
+
+CRITICAL: Your output MUST have exactly {num_experiences} entries in the "experience" array.
+REMEMBER: Only rephrase existing content. Do NOT invent new information.
+"""
 
     def _sanitize_latex(self, text: str) -> str:
-        """Escapes LaTeX special characters."""
-        chars = {
-            "&": r"\&",
-            "%": r"\%",
-            "$": r"\$",
-            "#": r"\#",
-            "_": r"\_",
-            "{": r"\{",
-            "}": r"\}",
-            "~": r"\textasciitilde{}",
-            "^": r"\^{}",
-            "\\": r"\textbackslash{}",
-        }
-        return "".join(chars.get(c, c) for c in text)
+        """Escapes LaTeX special characters, but skips already-escaped ones."""
+        if not text:
+            return text
+
+        result = []
+        i = 0
+        while i < len(text):
+            # If we find a backslash, check if the next char is already being escaped
+            if i < len(text) - 1 and text[i] == "\\":
+                next_char = text[i + 1]
+                # These are valid LaTeX escapes we should preserve
+                if next_char in "&%$#_{}":
+                    result.append("\\")
+                    result.append(next_char)
+                    i += 2
+                    continue
+
+            # Otherwise, escape special characters
+            char = text[i]
+            if char == "&":
+                result.append(r"\&")
+            elif char == "%":
+                result.append(r"\%")
+            elif char == "$":
+                result.append(r"\$")
+            elif char == "#":
+                result.append(r"\#")
+            elif char == "_":
+                result.append(r"\_")
+            elif char == "{":
+                result.append(r"\{")
+            elif char == "}":
+                result.append(r"\}")
+            elif char == "~":
+                result.append(r"\textasciitilde{}")
+            elif char == "^":
+                result.append(r"\^{}")
+            else:
+                result.append(char)
+            i += 1
+
+        return "".join(result)

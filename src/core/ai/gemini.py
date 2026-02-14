@@ -1,9 +1,13 @@
+import warnings
 from typing import Optional
-
-import google.generativeai as genai
 
 from src.core.ai.base import LLMClient
 from src.utils.logger import get_logger
+
+# Filter irrelevant warnings from google.generativeai
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
+
+import google.generativeai as genai  # noqa: E402
 
 logger = get_logger(__name__)
 
