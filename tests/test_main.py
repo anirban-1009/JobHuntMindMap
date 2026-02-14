@@ -63,7 +63,7 @@ class TestMainCLI:
         assert result.exit_code == 1
         assert "Error parsing YAML" in result.output
 
-    @patch("src.main.BrowserManager")
+    @patch("src.core.orchestrator.BrowserManager")
     def test_login_command(self, mock_browser_cls: MagicMock, runner: CliRunner, mock_config: str) -> None:
         """Verify the 'login' command initiates a manual browser session."""
         mock_browser = mock_browser_cls.return_value.__enter__.return_value
@@ -74,8 +74,8 @@ class TestMainCLI:
         mock_browser.login_manual.assert_called_once()
         assert "Starting browser" in result.output
 
-    @patch("src.main.BrowserManager")
-    @patch("src.main.JobSearcher")
+    @patch("src.core.orchestrator.BrowserManager")
+    @patch("src.core.orchestrator.JobSearcher")
     def test_search_command(
         self, mock_searcher_cls: MagicMock, mock_browser_cls: MagicMock, runner: CliRunner, mock_config: str
     ) -> None:
@@ -93,12 +93,12 @@ class TestMainCLI:
         assert result.exit_code == 0
         mock_searcher.search.assert_called()
         assert "Test Job" in result.output
-        assert "Found 1 jobs" in result.output
+        assert "Total unique jobs found: 1" in result.output
 
-    @patch("src.main.BrowserManager")
-    @patch("src.main.JobSearcher")
-    @patch("src.main.JobDetailsExtractor")
-    @patch("src.main.get_llm_client")
+    @patch("src.core.orchestrator.BrowserManager")
+    @patch("src.core.orchestrator.JobSearcher")
+    @patch("src.core.orchestrator.JobDetailsExtractor")
+    @patch("src.core.orchestrator.get_llm_client")
     def test_scrape_command(
         self,
         mock_get_llm: MagicMock,
@@ -126,9 +126,9 @@ class TestMainCLI:
 
         assert result.exit_code == 0
         mock_extractor.extract_multiple_jobs.assert_called()
-        assert "Successfully scraped 1 / 1 jobs" in result.output
+        assert "Scraped 1 / 1 jobs" in result.output
 
-    @patch("src.main.get_llm_client")
+    @patch("src.core.orchestrator.get_llm_client")
     def test_test_ai_command(self, mock_get_llm: MagicMock, runner: CliRunner, mock_config: str) -> None:
         """Verify the 'test-ai' command validates LLM provider connectivity."""
         mock_client = mock_get_llm.return_value
@@ -140,12 +140,14 @@ class TestMainCLI:
         assert "AI Response" in result.output
         assert "Hello form AI" in result.output
 
-    @patch("src.main.JobDetailsExtractor")
-    @patch("src.main.NetworkGraphBuilder")
+    @patch("src.core.orchestrator.get_llm_client")
+    @patch("src.core.orchestrator.ReferralService")
+    @patch("src.core.orchestrator.JobDetailsExtractor")
     def test_network_command(
         self,
-        mock_builder_cls: MagicMock,
         mock_extractor_cls: MagicMock,
+        mock_referral_service_cls: MagicMock,
+        mock_get_llm: MagicMock,
         runner: CliRunner,
         mock_config: str,
         tmp_path: pathlib.Path,
@@ -166,13 +168,11 @@ class TestMainCLI:
         mock_job.company = "Test Co"
         mock_extractor.get_cached_job.return_value = mock_job
 
-        mock_builder = mock_builder_cls.return_value
+        mock_referral_service = mock_referral_service_cls.return_value
         mock_match = MagicMock()
         mock_match.full_name = "Alice"
         mock_match.position = "Engineer"
-        mock_match.metadata.last_contacted = "Yesterday"
-        mock_match.metadata.achievements = ["Promo"]
-        mock_builder.find_matches.return_value = [mock_match]
+        mock_referral_service.find_potential_connections.return_value = [mock_match]
 
         result = runner.invoke(network, ["123", "--config", str(custom_config)])
 
@@ -180,15 +180,15 @@ class TestMainCLI:
         assert "Found 1 connections" in result.output
         assert "Alice" in result.output
 
-    @patch("src.main.get_llm_client")
-    @patch("src.main.RelevanceScorer")
-    @patch("src.main.JobDetailsExtractor")
-    @patch("src.main.PDFResumeParser")
+    @patch("src.core.orchestrator.get_llm_client")
+    @patch("src.core.orchestrator.AnalysisService")
+    @patch("src.core.orchestrator.JobDetailsExtractor")
+    @patch("src.core.orchestrator.PDFResumeParser")
     def test_score_command(
         self,
         mock_parser_cls: MagicMock,
         mock_extractor_cls: MagicMock,
-        mock_scorer_cls: MagicMock,
+        mock_analysis_service_cls: MagicMock,
         mock_get_llm: MagicMock,
         runner: CliRunner,
         mock_config: str,
@@ -207,8 +207,8 @@ class TestMainCLI:
         mock_extractor.get_cached_job.return_value = mock_job
         mock_extractor.cache_dir = tmp_path
 
-        mock_scorer = mock_scorer_cls.return_value
-        mock_scorer.score_job.return_value = ScoringResult(
+        mock_analysis_service = mock_analysis_service_cls.return_value
+        mock_analysis_service.score_job.return_value = ScoringResult(
             score=85, matching_skills=["A"], missing_skills=["B"], reasoning="Good"
         )
 
@@ -216,14 +216,13 @@ class TestMainCLI:
 
         assert result.exit_code == 0
         assert "Score 85" in result.output
-        assert (tmp_path / "123_analysis.json").exists()
 
-    @patch("src.main.GapAnalyzer")
-    @patch("src.main.get_llm_client")
+    @patch("src.core.orchestrator.get_llm_client")
+    @patch("src.core.orchestrator.AnalysisService")
     def test_analyze_gaps_command(
         self,
+        mock_analysis_service_cls: MagicMock,
         mock_get_llm: MagicMock,
-        mock_analyzer_cls: MagicMock,
         runner: CliRunner,
         mock_config: str,
         tmp_path: pathlib.Path,
@@ -239,14 +238,14 @@ class TestMainCLI:
             analysis = {"score": 50, "matching_skills": [], "missing_skills": ["Python"], "reasoning": "Test"}
             (cache_dir / "1_analysis.json").write_text(json.dumps(analysis))
 
-            mock_analyzer = mock_analyzer_cls.return_value
+            mock_analysis_service = mock_analysis_service_cls.return_value
             gap_result = MagicMock()
             gap_result.skill_frequency = {"Python": 1}
             gap_result.improvement_plan = "Learn Python"
-            mock_analyzer.analyze_gaps.return_value = gap_result
+            mock_analysis_service.run_gap_analysis.return_value = gap_result
 
             result = runner.invoke(analyze_gaps, ["--config", "conf.yaml", "--min-score", "40"])
 
             assert result.exit_code == 0
-            assert "Top Missing Skills" in result.output
+            assert "=== Top Missing Skills ===" in result.output
             assert "Learn Python" in result.output

@@ -1,6 +1,6 @@
 import json
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -68,12 +68,44 @@ class JobDetailsExtractor:
         self.cache_dir = cache_dir or Path("data/job_cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
+        # Initialize Database Manager
+        try:
+            from src.core.database import DatabaseManager
+
+            self.db = DatabaseManager()
+        except Exception as e:
+            logger.warning(f"Failed to initialize database: {e}")
+            self.db = None
+
     def _get_cache_path(self, job_id: str) -> Path:
         """Returns the path to the cached job file."""
         return self.cache_dir / f"{job_id}.json"
 
     def get_cached_job(self, job_id: str) -> Optional[JobDetails]:
-        """Loads job details from cache if they exist."""
+        """Loads job details from database (preferred) or file cache."""
+        # Try DB first
+        if self.db:
+            job_data = self.db.get_job(job_id)
+            if job_data:
+                # Convert DB row (dict) back to JobDetails object
+                # Start with required fields
+                try:
+                    # Parse raw_data if string
+                    if job_data.get("raw_data") and isinstance(job_data["raw_data"], str):
+                        try:
+                            job_data["raw_data"] = json.loads(job_data["raw_data"])
+                        except json.JSONDecodeError:
+                            job_data["raw_data"] = {}
+
+                    # Remove DB-specific fields that are not in JobDetails dataclass
+                    valid_keys = {f.name for f in fields(JobDetails)}
+                    filtered_data = {k: v for k, v in job_data.items() if k in valid_keys}
+
+                    return JobDetails(**filtered_data)
+                except Exception as e:
+                    logger.warning(f"Error converting DB record to JobDetails for {job_id}: {e}")
+
+        # Fallback to file cache
         cache_path = self._get_cache_path(job_id)
         if cache_path.exists():
             try:
@@ -81,17 +113,26 @@ class JobDetailsExtractor:
                     data = json.load(f)
                     return JobDetails(**data)
             except Exception as e:
-                logger.warning(f"Failed to load cache for job {job_id}: {e}")
+                logger.warning(f"Failed to load file cache for job {job_id}: {e}")
         return None
 
     def _save_to_cache(self, job: JobDetails):
-        """Saves job details to cache."""
+        """Saves job details to database (preferred) and file cache."""
+        # Save to DB
+        if self.db:
+            try:
+                self.db.save_job(asdict(job))
+                logger.info(f"Saved job {job.id} to database.")
+            except Exception as e:
+                logger.error(f"Failed to save job {job.id} to database: {e}")
+
+        # Save to file (backup/legacy compatibility)
         cache_path = self._get_cache_path(job.id)
         try:
             with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump(asdict(job), f, ensure_ascii=False, indent=2)
         except Exception as e:
-            logger.warning(f"Failed to save job {job.id} to cache: {e}")
+            logger.warning(f"Failed to save job {job.id} to file cache: {e}")
 
     def extract_job_details(
         self,

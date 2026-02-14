@@ -67,6 +67,11 @@ def get_llm_client(config: Dict[str, Any]) -> LLMClient:
 
         return FallbackClient(clients) if len(clients) > 1 else clients[0]
 
+    if provider == "mock":
+        from unittest.mock import MagicMock
+
+        return MagicMock(spec=LLMClient)
+
     raise ValueError(f"Unsupported LLM provider: {provider}")
 
 

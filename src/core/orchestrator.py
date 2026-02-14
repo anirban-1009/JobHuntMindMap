@@ -1,0 +1,260 @@
+import json
+import pathlib
+import sys
+from types import SimpleNamespace
+from typing import Any, Dict, List, Optional
+
+import yaml
+from colorama import Fore
+
+from src.core.ai import get_llm_client
+from src.core.analysis_service import AnalysisService
+from src.core.referral_service import ReferralService
+from src.core.resume_service import ResumeService
+from src.generator.resume_tailorer import ResumeTailorer
+from src.generator.sync_service import SyncService
+from src.ingest.browser_manager import BrowserManager
+from src.ingest.job_details_extractor import JobDetailsExtractor
+from src.ingest.job_searcher import JobSearcher
+from src.ingest.resume_parser import PDFResumeParser
+from src.notification.email_service import EmailService
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class MindMapApp:
+    """Orchestrates services for the Job Hunt Mindmap application."""
+
+    def __init__(self, config_path: str) -> None:
+        """Initialize services and load configuration."""
+        self.config_path = pathlib.Path(config_path)
+        self.config = self._load_config()
+        self.session_path = pathlib.Path("data/session.json")
+        self.llm = get_llm_client(self.config.get("ai", {}))
+
+        # Service Initialization
+        self.resume_service = ResumeService(self.llm, resume_path=self.config.get("user", {}).get("resume_path"))
+        self.analysis_service = AnalysisService(self.llm)
+        self.referral_service = ReferralService(self.llm, self.config)
+
+    def _load_config(self) -> Dict[str, Any]:
+        """Load and parse the YAML configuration file."""
+        if not self.config_path.exists():
+            print(f"{Fore.RED}Config file not found: {self.config_path}")
+            sys.exit(1)
+        with open(self.config_path, "r", encoding="utf-8") as config_file:
+            try:
+                return yaml.safe_load(config_file)
+            except yaml.YAMLError as error:
+                print(f"{Fore.RED}Error parsing YAML: {error}")
+                sys.exit(1)
+
+    def check_env(self) -> None:
+        """Check if the environment and configuration are valid."""
+        print(f"{Fore.CYAN}Checking environment...")
+        print(f"{Fore.GREEN}Config file valid.")
+        print(f"{Fore.GREEN}Mindmap is ready to run!")
+
+    def login(self) -> None:
+        """Launch browser for manual platform authentication."""
+        print(f"{Fore.CYAN}Starting browser for manual login...")
+        try:
+            with BrowserManager(headless=False, session_path=self.session_path) as browser:
+                browser.login_manual()
+        except Exception as error:
+            print(f"{Fore.RED}Login failed: {error}")
+            sys.exit(1)
+
+    def _get_locations(self) -> List[str]:
+        """Get flattened list of target locations from config."""
+        loc_cfg = self.config.get("search", {}).get("location", "United States")
+        if isinstance(loc_cfg, str):
+            return [location.strip() for location in loc_cfg.split(",") if location.strip()]
+        return loc_cfg
+
+    def search(self, headless: bool) -> None:
+        """Search for new job postings across defined keywords/locations."""
+        print(f"{Fore.CYAN}Starting job search (headless={headless})...")
+        try:
+            with BrowserManager(headless=headless, session_path=self.session_path) as browser:
+                searcher = JobSearcher(browser)
+                search_cfg = self.config.get("search", {})
+                all_results = []
+                for keywords in search_cfg.get("keywords", []):
+                    for loc in self._get_locations():
+                        print(f"Searching for '{keywords}' in {loc}...")
+                        results = searcher.search(
+                            keywords, loc, search_cfg.get("filters", {}), search_cfg.get("location_type", "Any")
+                        )
+                        all_results.extend(results)
+
+                unique = {job.id: job for job in all_results if job.id}.values()
+                print(f"{Fore.CYAN}\nTotal unique jobs found: {len(unique)}")
+                for job in list(unique)[:10]:
+                    print(f"- {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
+        except Exception as error:
+            print(f"{Fore.RED}Search failed: {error}")
+            sys.exit(1)
+
+    def scrape(self, headless: bool, limit: Optional[int], force: bool) -> None:
+        """Extract full details for found jobs and cache them."""
+        print(f"{Fore.CYAN}Starting extraction (headless={headless})...")
+        try:
+            with BrowserManager(headless=headless, session_path=self.session_path) as browser:
+                searcher = JobSearcher(browser)
+                extractor = JobDetailsExtractor(browser, llm_client=self.llm)
+
+                all_found = []
+                cfg = self.config.get("search", {})
+                for kw in cfg.get("keywords", []):
+                    for loc in self._get_locations():
+                        all_found.extend(
+                            searcher.search(kw, loc, cfg.get("filters", {}), cfg.get("location_type", "Any"))
+                        )
+
+                unique = list({job.id: job for job in all_found if job.id}.values())
+                if limit:
+                    unique = unique[:limit]
+
+                details = extractor.extract_multiple_jobs(unique, force=force)
+                print(f"{Fore.GREEN}Scraped {len(details)} / {len(unique)} jobs.")
+        except Exception as error:
+            print(f"{Fore.RED}Scrape failed: {error}")
+            sys.exit(1)
+
+    def score_jobs(self, score_all: bool, job_id: Optional[str]) -> None:
+        """Analyze job requirements against resume and assign scores."""
+        try:
+            resume_path = pathlib.Path(self.config.get("user", {}).get("resume_path", "data/resume.pdf"))
+            resume_text = PDFResumeParser().extract_text(resume_path)
+
+            if job_id:
+                job = JobDetailsExtractor(None).get_cached_job(job_id)
+                if job:
+                    res = self.analysis_service.score_job(job, resume_text)
+                    if res:
+                        color = Fore.GREEN if res.score >= 70 else Fore.YELLOW
+                        print(f"Job {job_id}: {color}Score {res.score}{Fore.RESET} - {res.reasoning}")
+            elif score_all:
+                self.analysis_service.score_all_cached_jobs(resume_text)
+        except Exception as error:
+            print(f"{Fore.RED}Scoring failed: {error}")
+            sys.exit(1)
+
+    def analyze_gaps(self, min_score: int) -> None:
+        """Identify missing skills across highly-rated job postings."""
+        print(f"{Fore.CYAN}Analyzing gaps across jobs scored >= {min_score}...")
+        report = self.analysis_service.run_gap_analysis(min_score)
+        if report:
+            print(f"{Fore.GREEN}\n=== Top Missing Skills ===")
+            for skill, count in report.skill_frequency.items():
+                print(f"- {skill}: {count} jobs")
+            print(f"{Fore.CYAN}\n=== Improvement Plan ===\n{report.improvement_plan}")
+
+    def notify(self, min_score: int) -> None:
+        """Send job digest emails for jobs meeting the score threshold."""
+        print(f"{Fore.CYAN}Preparing notifications...")
+        # (Same logic as before, delegating to EmailService)
+        extractor = JobDetailsExtractor(None)
+        cache_dir = pathlib.Path("data/job_cache")
+        scored_jobs = []
+        for cache_file in cache_dir.glob("*_analysis.json"):
+            with open(cache_file, "r") as json_file:
+                data = json.load(json_file)
+                if data.get("score", 0) >= min_score:
+                    job = extractor.get_cached_job(cache_file.stem.replace("_analysis", ""))
+                    if job:
+                        scored_jobs.append({"job": job, "score": SimpleNamespace(**data)})
+
+        if scored_jobs:
+            EmailService(self.config).send_job_digest(scored_jobs)
+            print(f"{Fore.GREEN}Notifications sent.")
+
+    def sync(self) -> None:
+        """Export processed job data to external knowledge base."""
+        print(f"{Fore.CYAN}Syncing to Obsidian...")
+        SyncService(self.config).sync()
+        print(f"{Fore.GREEN}Sync complete.")
+
+    def referral(self, job_id: str, connection_name: Optional[str]) -> Optional[Dict[str, str]]:
+        """Generate personalized referral message for a job and contact."""
+        job = JobDetailsExtractor(None).get_cached_job(job_id)
+        if not job:
+            print(f"{Fore.RED}Job {job_id} not found.")
+            return
+
+        matches = self.referral_service.find_potential_connections(job)
+        target = None
+        if connection_name:
+            target = SimpleNamespace(full_name=connection_name, position="Professional")
+        elif matches:
+            target = matches[0]
+            print(f"{Fore.GREEN}Using existing connection: {target.full_name}")
+
+        # Handled manual input in CLI side or here?
+        # If we keep this class as the core, it might need to return a "needs_input" status
+        # but for this specific tool, let's allow input in the Orchestrator for simplicity
+        # if it's strictly a CLI tool.
+        if not target:
+            print(f"{Fore.YELLOW}No connections found.")
+            return None  # Signal to CLI that it needs input
+
+        resume_data = self.resume_service.get_resume_data()
+        msg = self.referral_service.generate_message(job, target, resume_data)
+        self.referral_service.save_referral(job_id, target.full_name, msg)
+        return {"to": target.full_name, "message": msg}
+
+    def tailor_resume(self, job_id: str) -> Optional[pathlib.Path]:
+        """Create a job-optimized resume PDF based on JD analysis."""
+        job = JobDetailsExtractor(None).get_cached_job(job_id)
+        if not job:
+            return None
+
+        resume_data = self.resume_service.get_resume_data()
+        tailorer = ResumeTailorer(self.config)
+
+        print(f"{Fore.CYAN}Tailoring for {job.title} at {job.company}...")
+        job_desc = f"Title: {job.title}\nCompany: {job.company}\n\n{job.description}"
+        tailored_data = tailorer.tailor_resume(resume_data, job_desc)
+
+        latex = tailorer.generate_latex(tailored_data)
+        output_dir = pathlib.Path("output/resumes")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_company = (
+            "".join(char for char in job.company if char.isalnum() or char in (" ", "_", "-")).strip().replace(" ", "_")
+        )
+        output_path = output_dir / f"Resume_{safe_company}_{job_id}.pdf"
+
+        tailorer.compile_pdf(latex, output_path)
+        return output_path
+
+    def test_ai(self, prompt: str) -> None:
+        """Test AI client connectivity with a simple prompt."""
+        ai_cfg = self.config.get("ai", {})
+        provider = ai_cfg.get("provider", "gemini")
+        print(f"{Fore.CYAN}Initializing {provider} client and sending test prompt...")
+        try:
+            response = self.llm.generate(prompt)
+            if response:
+                print(f"{Fore.GREEN}\nAI Response ({provider}):")
+                print(f"{Fore.WHITE}{response.strip()}")
+            else:
+                print(f"{Fore.RED}\nAI returned empty response. Check API key/Ollama.")
+        except Exception as error:
+            print(f"{Fore.RED}\nAI Check failed: {error}")
+            sys.exit(1)
+
+    def find_network(self, job_id: str) -> None:
+        """Search for professional contacts at the job's company."""
+        extractor = JobDetailsExtractor(None)
+        job = extractor.get_cached_job(job_id)
+        if not job:
+            print(f"{Fore.RED}Job {job_id} not found.")
+            return
+
+        matches = self.referral_service.find_potential_connections(job)
+        print(f"{Fore.CYAN}\nFound {len(matches)} connections at {job.company}:")
+        for conn in matches:
+            print(f"- {Fore.WHITE}{conn.full_name} {Fore.YELLOW}({conn.position})")
