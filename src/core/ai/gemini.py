@@ -11,18 +11,18 @@ logger = get_logger(__name__)
 class GeminiClient(LLMClient):
     """Client for Google Gemini API."""
 
-    def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash-exp"):
+    def __init__(self, api_key: str, model_name: str = "gemini-2.0-flash"):
         """
         Initialize Gemini client with API key and model.
 
         Args:
             api_key: Google AI Studio API Key.
-            model_name: Gemini model name (default: gemini-2.0-flash-exp).
+            model_name: Gemini model name (default: gemini-2.0-flash).
         """
         self.api_key = api_key
         self.model_name = model_name
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name=model_name)
+        self.model = genai.GenerativeModel(model_name=self.model_name)
 
     def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
         """

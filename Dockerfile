@@ -29,10 +29,14 @@ COPY uv.lock .
 
 # Install dependencies using uv
 # --no-dev: exclude development dependencies
-RUN uv sync --frozen --no-dev
+# --no-install-project: install only dependencies first to cache them
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy the rest of the application
 COPY . .
+
+# Install the project itself
+RUN uv sync --frozen --no-dev
 
 # Ensure necessary directories exist
 RUN mkdir -p data/job_cache output/resumes

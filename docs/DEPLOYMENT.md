@@ -18,12 +18,12 @@ The recommended way to run the tool to ensure all dependencies (Browsers, LaTeX,
 - **Image**: `mindmap:latest` (built from `Dockerfile`)
 - **Run Command**:
   ```bash
-  docker run -d \
-    -v $(pwd)/config:/app/config \
+  docker run --rm -it \
+    -v $(pwd)/config.yaml:/app/config.yaml \
     -v $(pwd)/data:/app/data \
     -v /Users/me/Obsidian/MindMap:/vault \
     --name job-mindmap \
-    mindmap:latest
+    mindmap:latest [COMMAND]
   ```
 - **Volume Mounting**:
     - `/vault`: Maps to your local Obsidian Vault (Read/Write).
@@ -42,8 +42,8 @@ To automate the daily email digest and vault update:
     ```bash
     #!/bin/bash
     cd /path/to/mindmap
-    source .venv/bin/activate
-    python src/main.py --mode=daily
+    # Make sure to run the daily script which handles the orchestration
+    ./scripts/run_daily.sh
     ```
 2.  **Add to Crontab**:
     - Run `crontab -e`

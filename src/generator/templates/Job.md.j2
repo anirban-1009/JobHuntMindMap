@@ -1,6 +1,7 @@
 # {{ job.title }} @ [[{{ job.company|replace(' ', '_') }}]]
 
 - **Score:** {{ score.score }}/100
+- **Job ID:** {{ job.id }}
 - **Location:** {{ job.location }}
 - **Posted:** {{ job.posted_date }}
 - **Type:** {{ job.employment_type }}
@@ -8,7 +9,7 @@
 - **Job Function:** {{ job.job_function }}
 - **Industries:** {{ job.industries }}
 - **Link:** [Apply Here]({{ job.link }})
-- **Status:** #ToApply
+- **Status:** #ToApply #{{ specialization }}
 
 ## Analysis
 **Reasoning:**
