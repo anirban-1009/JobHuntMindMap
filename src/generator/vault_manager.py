@@ -32,13 +32,14 @@ class VaultManager:
                 logger.info(f"Creating folder: {folder_path}")
                 folder_path.mkdir(parents=True, exist_ok=True)
 
-    def write_file(self, content: str, filename: str, folder_key: str) -> Path:
-        """Write content to a file in the specified folder.
+    def write_file(self, content: str, filename: str, folder_key: str, subfolder: str = "") -> Path:
+        """Write content to a file in the specified folder (and optional subfolder).
 
         Args:
             content: The string content to write.
             filename: The name of the file (including extension).
-            folder_key: The key in 'folders' config identifying the subfolder.
+            folder_key: The key in 'folders' config identifying the base folder.
+            subfolder: Optional subfolder within the base folder (e.g. "ToApply").
 
         Returns:
             The absolute path to the written file.
@@ -51,6 +52,9 @@ class VaultManager:
 
         folder_name = self.folders[folder_key]
         folder_path = self.vault_path / folder_name
+
+        if subfolder:
+            folder_path = folder_path / subfolder
 
         # Ensure the folder exists before writing
         folder_path.mkdir(parents=True, exist_ok=True)

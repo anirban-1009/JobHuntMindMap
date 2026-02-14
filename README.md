@@ -22,23 +22,25 @@ Instead of tracking applications in endless spreadsheets, this tool generates a 
 ## Quick Start 🚀
 
 1.  **Set up**: [Follow the First Run Guide](docs/FIRST_RUN.md) to install dependencies and configure API keys.
-2.  **Login**: `python -m src.main login` (logs you into LinkedIn).
-3.  **Search**: `python -m src.main search` (finds new jobs).
-4.  **Scrape**: `python -m src.main scrape` (fetches details).
-5.  **Score**: `python -m src.main score --all` (ranks jobs with AI).
+2.  **Login**: `uv run mindmap login` (logs you into LinkedIn).
+3.  **Search**: `uv run mindmap search` (finds new jobs).
+4.  **Scrape**: `uv run mindmap scrape` (fetches details).
+5.  **Score**: `uv run mindmap score --all` (ranks jobs with AI).
 6.  **Visualize**: Open your vault in Obsidian!
 
 ## How to Run
 
 The tool is designed to be run via a CLI. After installation, you can use the following commands:
 
--   `python -m src.main check`: Validate config and environment.
--   `python -m src.main login`: Manual LinkedIn login to save session.
--   `python -m src.main search`: Discovery phase - finds job IDs.
--   `python -m src.main scrape`: Extraction phase - gets job descriptions.
--   `python -m src.main score`: AI phase - calculates relevance.
--   `python -m src.main network`: Network phase - finds connections for a job.
--   `python -m src.main notify`: Alert phase - sends email digest.
+-   `uv run mindmap check`: Validate config and environment.
+-   `uv run mindmap login`: Manual LinkedIn login to save session.
+-   `uv run mindmap search`: Discovery phase - finds job IDs.
+-   `uv run mindmap scrape`: Extraction phase - gets job descriptions.
+-   `uv run mindmap score`: AI phase - calculates relevance.
+-   `uv run mindmap network`: Network phase - finds connections for a job.
+-   `uv run mindmap notify`: Alert phase - sends email digest.
+-   `uv run mindmap sync`: Sync job data to Obsidian vault.
+-   `uv run mindmap tailor <JOB_ID>`: Generate a tailored resume PDF for a specific job.
 
 For advanced usage and automation, see the [Deployment Strategy](docs/DEPLOYMENT.md).
 

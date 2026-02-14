@@ -49,3 +49,4 @@ output/*
 # Logs
 logs/*
 !logs/.gitkeep
+debug*

@@ -26,13 +26,9 @@ class ResumeTailorer:
         # Setup Jinja2 environment for LaTeX
         template_dir = Path(__file__).parent / "templates"
         self.jinja_env = jinja2.Environment(
-            block_start_string="{%",
-            block_end_string="%}",
-            variable_start_string="{{",
-            variable_end_string="}}",
-            comment_start_string="{#",
-            comment_end_string="#}",
             loader=jinja2.FileSystemLoader(str(template_dir)),
+            comment_start_string="<#",
+            comment_end_string="#>",
         )
 
     def tailor_resume(self, resume_data: Dict[str, Any], job_description: str) -> Dict[str, Any]:

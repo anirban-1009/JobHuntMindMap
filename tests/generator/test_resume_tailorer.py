@@ -73,8 +73,10 @@ class TestResumeTailorer:
 
         assert "John" in latex
         assert "Doe" in latex
-        assert "moderncv" in latex
-        assert "Software Engineer" in latex
+        assert "Jake Gutierrez" in latex  # Jake's Resume template author
+        assert "\\documentclass[letterpaper,11pt]{article}" in latex  # Article class instead of moderncv
+        assert "Senior Developer" in latex  # Job title from experience section
+        assert "Tech Corp" in latex  # Company name from experience
 
     @patch("src.generator.resume_tailorer.subprocess.run")
     @patch("src.generator.resume_tailorer.get_llm_client")

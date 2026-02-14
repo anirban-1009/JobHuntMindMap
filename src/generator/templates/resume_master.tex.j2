@@ -1,49 +1,171 @@
-\documentclass[11pt,a4paper,sans]{moderncv}
+%-------------------------
+% Resume in Latex
+% Author : Jake Gutierrez
+% Based off of: https://github.com/sb2nov/resume
+% License : MIT
+%-------------------------
 
-% moderncv themes
-\moderncvstyle{classic}
-\moderncvcolor{blue}
+\documentclass[letterpaper,11pt]{article}
 
-% character encoding
-\usepackage[utf8]{inputenc}
+\usepackage{latexsym}
+\usepackage[letterpaper,margin=0.75in]{geometry}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\input{glyphtounicode}
 
-% adjust the page margins
-\usepackage[scale=0.75]{geometry}
 
-% personal data
-\name{ {{ first_name }} }{ {{ last_name }} }
-\title{ {{ job_title }} }
-\email{ {{ email }} }
-{% if phone %}\phone[mobile]{ {{ phone }} }{% endif %}
-{% if linkedin %}\social[linkedin]{ {{ linkedin }} }{% endif %}
-{% if github %}\social[github]{ {{ github }} }{% endif %}
-{% if website %}\extrainfo{\url{ {{ website }} }}{% endif %}
+%----------FONT OPTIONS----------
+% sans-serif
+% \usepackage[sfdefault]{FiraSans}
+% \usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{noto-sans}
+% \usepackage[default]{sourcesanspro}
 
-% content
+% serif
+% \usepackage{CormorantGaramond}
+% \usepackage{charter}
+
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-1pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
 \begin{document}
-\makecvtitle
 
-\section{Summary}
-{{ professional_summary }}
+%----------HEADING----------
 
+\begin{center}
+    \textbf{\Huge \scshape {{ first_name }} {{ last_name }}} \\ \vspace{1pt}
+    \small {{ phone }} $|$ \href{mailto:{{ email }}}{\underline{ {{ email }} }} $|$ 
+    \href{https://{{ linkedin }}}{\underline{ {{ linkedin }} }} $|$
+    \href{https://{{ github }}}{\underline{ {{ github }} }}
+    {% if website %} $|$ \href{https://{{ website }}}{\underline{ {{ website }} }}{% endif %}
+\end{center}
+
+
+%-----------EXPERIENCE-----------
 \section{Experience}
-{% for job in experience -%}
-\cventry{ {{ job.dates }} }{ {{ job.title }} }{ {{ job.company }} }{ {{ job.location }} }{}{
-\begin{itemize}
-{% for bullet in job.bullets -%}
-  \item {{ bullet }}
-{%- endfor %}
-\end{itemize}}
-{% endfor %}
+  \resumeSubHeadingListStart
 
-\section{Skills}
-{% for category, items in skills.items() -%}
-\cvitem{ {{ category }} }{ {{ items|join(', ') }} }
-{% endfor %}
+    {% for job in experience %}
+    \resumeSubheading
+      { {{ job.title }} }
+      { {{ job.dates }} }
+      { {{ job.company }} }
+      { {{ job.location }} }
+      \resumeItemListStart
+        {% for bullet in job.bullets %}
+        \resumeItem{ {{ bullet }} }
+        {% endfor %}
+      \resumeItemListEnd
+    {% endfor %}
 
+  \resumeSubHeadingListEnd
+
+
+%-----------EDUCATION-----------
 \section{Education}
-{% for edu in education -%}
-\cventry{ {{ edu.dates }} }{ {{ edu.degree }} }{ {{ edu.institution }} }{ {{ edu.location }} }{}{ {{ edu.description }} }
-{% endfor %}
+  \resumeSubHeadingListStart
+    {% for edu in education %}
+    \resumeSubheading
+      { {{ edu.institution }} }
+      { {{ edu.dates }} }
+      { {{ edu.degree }} }
+      { {{ edu.location }} }
+    {% endfor %}
+  \resumeSubHeadingListEnd
 
+
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      {% for project in projects %}
+      \resumeProjectHeading
+          {\textbf{ {{ project.name }} } $|$ \emph{ {{ project.technologies }} }}
+          { {{ project.dates|default('') }} }
+          \resumeItemListStart
+            \resumeItem{ {{ project.description }} }
+          \resumeItemListEnd
+      {% endfor %}
+    \resumeSubHeadingListEnd
+
+
+%-----------TECHNICAL SKILLS-----------
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     {% for category, items in skills.items() %}
+     \textbf{ {{ category }}: }{ {{ items|join(', ') }} } \\
+     {% endfor %}
+    }}
+ \end{itemize}
+
+
+%-------------------------------------------
 \end{document}

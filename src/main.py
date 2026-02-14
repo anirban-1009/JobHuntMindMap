@@ -13,6 +13,7 @@ from src.core.ai import get_llm_client
 from src.core.gap_analysis import GapAnalyzer
 from src.core.network_graph import NetworkGraphBuilder
 from src.core.relevance_scorer import RelevanceScorer, ScoringResult
+from src.generator.sync_service import SyncService
 from src.ingest.browser_manager import BrowserManager
 from src.ingest.job_details_extractor import JobDetailsExtractor
 from src.ingest.job_searcher import JobSearcher
@@ -272,6 +273,17 @@ class MindMapApp:
             click.echo(Fore.RED + f"Notification failed: {e}")
             sys.exit(1)
 
+    def sync(self) -> None:
+        """Syncs all data to Obsidian."""
+        click.echo(Fore.CYAN + "Syncing with Obsidian...")
+        try:
+            syncer = SyncService(self.config)
+            syncer.sync()
+            click.echo(Fore.GREEN + "Sync complete!")
+        except Exception as e:
+            click.echo(Fore.RED + f"Sync failed: {e}")
+            sys.exit(1)
+
 
 @click.group()
 def cli():
@@ -364,6 +376,157 @@ def notify(config, min_score):
     """Send job digest email."""
     app = MindMapApp(config)
     app.notify(min_score)
+
+
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.argument("job_id")
+def tailor(config, job_id):
+    """Generate a tailored resume for a specific job."""
+    from src.core.ai import get_llm_client
+    from src.generator.resume_tailorer import ResumeTailorer
+    from src.ingest.job_details_extractor import JobDetailsExtractor
+    from src.ingest.resume_parser import PDFResumeParser
+
+    app = MindMapApp(config)
+
+    # 1. Load Job Details
+    extractor = JobDetailsExtractor(None)
+    job = extractor.get_cached_job(job_id)
+    if not job:
+        click.echo(Fore.RED + f"Job {job_id} not found in cache.")
+        sys.exit(1)
+
+    # 2. Extract Resume Data
+    resume_json_path = pathlib.Path("data/resume.json")
+
+    # Try to auto-create JSON from PDF if missing
+    if not resume_json_path.exists():
+        pdf_path_str = app.config.get("user", {}).get("resume_path")
+        pdf_path = pathlib.Path(pdf_path_str) if pdf_path_str else None
+
+        if pdf_path and pdf_path.exists():
+            click.echo(Fore.CYAN + f"Parsing resume PDF from {pdf_path} to create structured data...")
+            try:
+                parser = PDFResumeParser()
+                resume_text = parser.parse(pdf_path)
+
+                # Use LLM to structure this text
+                llm = get_llm_client(app.config.get("ai", app.config))
+                prompt = f"""
+                You are a data extraction assistant. Convert the following Resume Text into a valid JSON object matching this structure:
+                {{
+                  "first_name": "String", "last_name": "String", "email": "String", "phone": "String",
+                  "linkedin": "String (URL)", "github": "String (URL)", "website": "String (URL)",
+                  "job_title": "String", "professional_summary": "String",
+                  "experience": [ {{"title": "String", "company": "String", "dates": "String", "location": "String", "bullets": ["String"]}} ],
+                  "education": [ {{"institution": "String", "degree": "String", "dates": "String", "location": "String", "description": "String"}} ],
+                  "skills": {{ "Category": ["Skill"] }}
+                }}
+                
+                RESUME TEXT:
+                {resume_text[:4000]}
+                
+                Return ONLY valid JSON.
+                """
+                json_str = llm.generate(prompt)
+
+                # Clean markdown blocks
+                if "```json" in json_str:
+                    json_str = json_str.split("```json")[1].split("```")[0].strip()
+                elif "```" in json_str:
+                    json_str = json_str.split("```")[1].split("```")[0].strip()
+
+                resume_data = json.loads(json_str)
+
+                with open(resume_json_path, "w") as f:
+                    json.dump(resume_data, f, indent=2)
+                click.echo(Fore.GREEN + "Successfully created 'data/resume.json' from PDF.")
+
+            except Exception as e:
+                click.echo(Fore.YELLOW + f"Failed to auto-parse PDF: {e}. Falling back to sample.")
+
+    if not resume_json_path.exists():
+        click.echo(Fore.RED + "Structured resume data not found at data/resume.json.")
+
+        # Create a sample template if missing
+        sample_data = {
+            "first_name": "First",
+            "last_name": "Last",
+            "email": "email@example.com",
+            "phone": "555-123-4567",
+            "linkedin": "linkedin.com/in/user",
+            "github": "github.com/user",
+            "website": "example.com",
+            "job_title": "Software Engineer",
+            "professional_summary": "Experienced engineer...",
+            "experience": [
+                {
+                    "title": "Software Developer",
+                    "company": "Tech Corp",
+                    "dates": "2020-Present",
+                    "location": "San Francisco, CA",
+                    "bullets": ["Implemented X using Python.", "Improved performance by Y%."],
+                }
+            ],
+            "education": [
+                {
+                    "institution": "University of Tech",
+                    "degree": "B.S. Computer Science",
+                    "dates": "2016-2020",
+                    "location": "City, State",
+                    "description": "Graduated with Honors.",
+                }
+            ],
+            "skills": {"Languages": ["Python", "JavaScript"], "Tools": ["Docker", "Git"]},
+        }
+        with open(resume_json_path, "w") as f:
+            json.dump(sample_data, f, indent=2)
+        click.echo(
+            Fore.YELLOW
+            + "Created sample 'data/resume.json'. Please fill it with your details and run this command again."
+        )
+        sys.exit(1)
+
+    with open(resume_json_path, "r") as f:
+        resume_data = json.load(f)
+
+    # 3. Tailor
+    tailorer = ResumeTailorer(app.config)
+    click.echo(Fore.CYAN + f"Tailoring resume for {job.title} at {job.company}...")
+
+    # Construct description from title + description
+    job_desc = f"Title: {job.title}\nCompany: {job.company}\n\n{job.description}"
+    tailored_data = tailorer.tailor_resume(resume_data, job_desc)
+
+    # 4. Generate PDF
+    try:
+        latex = tailorer.generate_latex(tailored_data)
+        output_dir = pathlib.Path("output/resumes")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Clean company name for filename
+        safe_company = "".join(c for c in job.company if c.isalnum() or c in (" ", "_", "-")).strip().replace(" ", "_")
+        output_path = output_dir / f"Resume_{safe_company}_{job_id}.pdf"
+
+        tailorer.compile_pdf(latex, output_path)
+        click.echo(Fore.GREEN + f"Tailored resume saved to: {output_path}")
+    except Exception as e:
+        click.echo(Fore.RED + f"Failed to generate PDF: {e}")
+        # Save LaTeX for debugging
+        if "latex" in locals():
+            debug_tex = pathlib.Path("output/resumes") / f"debug_{job_id}.tex"
+            with open(debug_tex, "w") as f:
+                f.write(latex)
+            click.echo(Fore.YELLOW + f"Saved LaTeX source to {debug_tex} for manual compilation.")
+
+
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+def sync(config):
+    """Sync data to Obsidian vault."""
+    app = MindMapApp(config)
+    app.sync()
 
 
 if __name__ == "__main__":

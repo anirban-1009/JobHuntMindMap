@@ -37,19 +37,20 @@ class TemplateManager:
             lstrip_blocks=True,
         )
 
-    def render_job(self, job: JobDetails, score: ScoringResult) -> str:
+    def render_job(self, job: JobDetails, score: ScoringResult, specialization: str = "General") -> str:
         """
         Renders the Job.md template.
 
         Args:
             job: JobDetails object.
             score: ScoringResult object.
+            specialization: Job specialization tag.
 
         Returns:
             Rendered Markdown string.
         """
         template = self.env.get_template("Job.md.j2")
-        return template.render(job=job, score=score)
+        return template.render(job=job, score=score, specialization=specialization)
 
     def render_company(
         self,
