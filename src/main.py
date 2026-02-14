@@ -43,9 +43,21 @@ def search(config, headless):
 @click.option("--headless", is_flag=True, default=False, help="Run in headless mode")
 @click.option("--limit", default=None, type=int, help="Limit number of jobs")
 @click.option("--force", is_flag=True, default=False, help="Force re-scrape")
-def scrape(config, headless, limit, force):
+@click.option("--min-fast-score", type=int, default=0, help="Minimum initial NLP score (0-100)")
+@click.option("--score", is_flag=True, default=False, help="Perform LLM scoring after scraping")
+def scrape(config, headless, limit, force, min_fast_score, score):
     """Scrape details for found jobs."""
-    MindMapApp(config).scrape(headless, limit, force)
+    MindMapApp(config).scrape(headless, limit, force, min_fast_score, score)
+
+
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--headless", is_flag=True, default=False, help="Run in headless mode")
+@click.option("--limit", default=None, type=int, help="Limit number of jobs")
+@click.option("--score", is_flag=True, default=False, help="Perform LLM re-scoring after refresh")
+def refresh(config, headless, limit, score):
+    """Re-scrape details for existing jobs in database."""
+    MindMapApp(config).refresh_existing_jobs(headless, limit, score)
 
 
 @cli.command()
@@ -119,6 +131,13 @@ def test_ai(config, prompt):
 def network(job_id, config):
     """Find connections for a job."""
     MindMapApp(config).find_network(job_id)
+
+
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+def network_all(config):
+    """Find connections for all jobs."""
+    MindMapApp(config).map_all_networks()
 
 
 @cli.command()

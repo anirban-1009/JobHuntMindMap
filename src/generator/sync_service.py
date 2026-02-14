@@ -112,19 +112,28 @@ class SyncService:
             for x in [
                 "machine learning",
                 "ml",
-                "ai engineer",
+                "ai ",
                 "artificial intelligence",
                 "nlp",
                 "computer vision",
                 "generative ai",
+                "llm",
+                "deep learning",
+                "transformers",
+                "pytorch",
+                "tensorflow",
+                "neural",
             ]
         ):
             return "AI_ML"
-        if any(x in title for x in ["data scientist", "data analyst", "data engineer", "big data"]):
+        if any(x in title for x in ["data scientist", "data analyst", "data engineer", "big data", "analytics"]):
             return "Data_Science"
-        if any(x in title for x in ["python", "django", "flask", "fastapi"]):
+        if any(x in title for x in ["python", "django", "flask", "fastapi", "numpy", "pandas"]):
             return "Python_Dev"
-        if any(x in title for x in ["backend", "back-end", "server", "distributed systems"]):
+        if any(
+            x in title
+            for x in ["backend", "back-end", "server", "distributed systems", "api engineer", "platform engineer"]
+        ):
             return "Backend"
         if any(
             x in title

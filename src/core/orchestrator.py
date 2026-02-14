@@ -10,6 +10,7 @@ from colorama import Fore
 from src.core.ai import get_llm_client
 from src.core.analysis_service import AnalysisService
 from src.core.referral_service import ReferralService
+from src.core.relevance_scorer import FastScorer
 from src.core.resume_service import ResumeService
 from src.generator.resume_tailorer import ResumeTailorer
 from src.generator.sync_service import SyncService
@@ -97,7 +98,9 @@ class MindMapApp:
             print(f"{Fore.RED}Search failed: {error}")
             sys.exit(1)
 
-    def scrape(self, headless: bool, limit: Optional[int], force: bool) -> None:
+    def scrape(
+        self, headless: bool, limit: Optional[int], force: bool, min_fast_score: int = 0, do_score: bool = False
+    ) -> None:
         """Extract full details for found jobs and cache them."""
         print(f"{Fore.CYAN}Starting extraction (headless={headless})...")
         try:
@@ -114,13 +117,85 @@ class MindMapApp:
                         )
 
                 unique = list({job.id: job for job in all_found if job.id}.values())
-                if limit:
-                    unique = unique[:limit]
 
-                details = extractor.extract_multiple_jobs(unique, force=force)
-                print(f"{Fore.GREEN}Scraped {len(details)} / {len(unique)} jobs.")
+                # Fast Scoring
+                resume_data = self.resume_service.get_resume_data()
+                skills = []
+                if isinstance(resume_data.get("skills"), dict):
+                    for cat_skills in resume_data["skills"].values():
+                        if isinstance(cat_skills, list):
+                            skills.extend(cat_skills)
+
+                fast_scorer = FastScorer(skills)
+                scored_jobs = []
+                for job in unique:
+                    f_score = fast_scorer.score_result(job)
+                    if f_score >= min_fast_score:
+                        scored_jobs.append((f_score, job))
+
+                # Sort by score descending
+                scored_jobs.sort(key=lambda x: x[0], reverse=True)
+
+                final_jobs = [j[1] for j in scored_jobs]
+                if limit:
+                    final_jobs = final_jobs[:limit]
+
+                if not final_jobs:
+                    print(f"{Fore.YELLOW}No jobs met the minimum fast score of {min_fast_score}.")
+                    return
+
+                print(f"{Fore.CYAN}Extracting details for {len(final_jobs)} prioritized jobs...")
+                details = extractor.extract_multiple_jobs(final_jobs, force=force)
+                print(f"{Fore.GREEN}Scraped {len(details)} / {len(final_jobs)} jobs.")
+
+                if do_score and details:
+                    print(f"{Fore.CYAN}Performing LLM scoring on scraped jobs...")
+                    resume_path = pathlib.Path(self.config.get("user", {}).get("resume_path", "data/resume.pdf"))
+                    resume_text = PDFResumeParser().extract_text(resume_path)
+                    for job in details:
+                        res = self.analysis_service.score_job(job, resume_text)
+                        if res:
+                            color = Fore.GREEN if res.score >= 70 else Fore.YELLOW
+                            print(f"[{job.id}] {color}Score {res.score}{Fore.RESET} - {job.title} @ {job.company}")
+
         except Exception as error:
             print(f"{Fore.RED}Scrape failed: {error}")
+            sys.exit(1)
+
+    def refresh_existing_jobs(self, headless: bool, limit: Optional[int], do_score: bool = False) -> None:
+        """Re-scrape details for jobs already present in the database."""
+        print(f"{Fore.CYAN}Refreshing existing records (headless={headless})...")
+        try:
+            extractor = JobDetailsExtractor(None)
+            if not extractor.db:
+                print(f"{Fore.RED}Database not available.")
+                return
+
+            all_jobs = extractor.db.get_all_jobs(limit=1000)
+            if not all_jobs:
+                print(f"{Fore.YELLOW}No jobs found in database to refresh.")
+                return
+
+            if limit:
+                all_jobs = all_jobs[:limit]
+
+            print(f"{Fore.WHITE}Found {len(all_jobs)} jobs to refresh.")
+
+            with BrowserManager(headless=headless, session_path=self.session_path) as browser:
+                extractor.browser = browser
+                extractor.llm = self.llm
+
+                details = extractor.extract_multiple_jobs(all_jobs, force=True)
+                print(f"{Fore.GREEN}Successfully refreshed {len(details)} / {len(all_jobs)} jobs.")
+
+                if do_score and details:
+                    print(f"{Fore.CYAN}Performing LLM re-scoring...")
+                    resume_path = pathlib.Path(self.config.get("user", {}).get("resume_path", "data/resume.pdf"))
+                    resume_text = PDFResumeParser().extract_text(resume_path)
+                    for job in details:
+                        self.analysis_service.score_job(job, resume_text)
+        except Exception as error:
+            print(f"{Fore.RED}Refresh failed: {error}")
             sys.exit(1)
 
     def score_jobs(self, score_all: bool, job_id: Optional[str]) -> None:
@@ -258,3 +333,33 @@ class MindMapApp:
         print(f"{Fore.CYAN}\nFound {len(matches)} connections at {job.company}:")
         for conn in matches:
             print(f"- {Fore.WHITE}{conn.full_name} {Fore.YELLOW}({conn.position})")
+
+    def map_all_networks(self) -> None:
+        """Map professional connections to all cached jobs."""
+        print(f"{Fore.CYAN}Mapping connections across all available jobs...")
+
+        extractor = JobDetailsExtractor(None)
+        if not extractor.db:
+            print(f"{Fore.RED}Database not available.")
+            return
+
+        all_jobs_data = extractor.db.get_all_jobs(limit=1000)
+        jobs_with_connections = 0
+        total_connections = 0
+
+        for job_data in all_jobs_data:
+            job = extractor.get_cached_job(job_data["id"])
+            if not job:
+                continue
+
+            matches = self.referral_service.find_potential_connections(job)
+            if matches:
+                jobs_with_connections += 1
+                total_connections += len(matches)
+                print(f"\n{Fore.GREEN}[{job.id}] {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
+                for conn in matches:
+                    print(f"  - {Fore.CYAN}{conn.full_name} {Fore.WHITE}({conn.position})")
+
+        print(f"\n{Fore.CYAN}{'=' * 40}")
+        print(f"{Fore.GREEN}Summary: Found {total_connections} connections across {jobs_with_connections} jobs.")
+        print(f"{Fore.CYAN}{'=' * 40}")
