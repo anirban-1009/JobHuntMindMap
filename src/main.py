@@ -147,5 +147,12 @@ def sync(config):
     MindMapApp(config).sync()
 
 
+@cli.command()
+@click.option("--config", default="config.yaml")
+def prune(config):
+    """Delete Obsidian pages not present in the database."""
+    MindMapApp(config).prune()
+
+
 if __name__ == "__main__":
     cli()

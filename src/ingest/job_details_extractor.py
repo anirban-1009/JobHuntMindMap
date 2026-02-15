@@ -1,10 +1,10 @@
 import json
 import time
 from dataclasses import asdict, dataclass, fields
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.core.ai import LLMClient
+from src.core.database import DatabaseManager
 from src.ingest.browser_manager import BrowserManager
 from src.ingest.selectors import (
     JOB_APPLY_SELECTORS,
@@ -13,6 +13,7 @@ from src.ingest.selectors import (
     JOB_CRITERIA_ITEM_SELECTORS,
     JOB_CRITERIA_VALUE_SELECTORS,
     JOB_DESCRIPTION_SELECTORS,
+    JOB_ERROR_SELECTORS,
     JOB_INSIGHT_SELECTORS,
     JOB_LOCATION_SELECTORS,
     JOB_PAGE_WAIT_SELECTORS,
@@ -53,7 +54,6 @@ class JobDetailsExtractor:
         self,
         browser_manager: Optional[BrowserManager],
         llm_client: Optional[LLMClient] = None,
-        cache_dir: Optional[Path] = None,
     ):
         """
         Initialize the JobDetailsExtractor.
@@ -61,35 +61,23 @@ class JobDetailsExtractor:
         Args:
             browser_manager: Initialized BrowserManager instance.
             llm_client: Optional LLMClient to refine extracted data.
-            cache_dir: Directory to store cached job details. Defaults to data/job_cache.
         """
         self.browser = browser_manager
         self.llm = llm_client
-        self.cache_dir = cache_dir or Path("data/job_cache")
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         # Initialize Database Manager
         try:
-            from src.core.database import DatabaseManager
-
             self.db = DatabaseManager()
         except Exception as e:
             logger.warning(f"Failed to initialize database: {e}")
             self.db = None
 
-    def _get_cache_path(self, job_id: str) -> Path:
-        """Returns the path to the cached job file."""
-        return self.cache_dir / f"{job_id}.json"
-
     def get_cached_job(self, job_id: str) -> Optional[JobDetails]:
-        """Loads job details from database (preferred) or file cache."""
-        # Try DB first
+        """Loads job details from database."""
         if self.db:
-            job_data = self.db.get_job(job_id)
-            if job_data:
-                # Convert DB row (dict) back to JobDetails object
-                # Start with required fields
-                try:
+            try:
+                job_data = self.db.get_job(job_id)
+                if job_data:
                     # Parse raw_data if string
                     if job_data.get("raw_data") and isinstance(job_data["raw_data"], str):
                         try:
@@ -102,37 +90,18 @@ class JobDetailsExtractor:
                     filtered_data = {k: v for k, v in job_data.items() if k in valid_keys}
 
                     return JobDetails(**filtered_data)
-                except Exception as e:
-                    logger.warning(f"Error converting DB record to JobDetails for {job_id}: {e}")
-
-        # Fallback to file cache
-        cache_path = self._get_cache_path(job_id)
-        if cache_path.exists():
-            try:
-                with open(cache_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    return JobDetails(**data)
             except Exception as e:
-                logger.warning(f"Failed to load file cache for job {job_id}: {e}")
+                logger.warning(f"Error retrieving job {job_id} from DB: {e}")
         return None
 
     def _save_to_cache(self, job: JobDetails):
-        """Saves job details to database (preferred) and file cache."""
-        # Save to DB
+        """Saves job details to database."""
         if self.db:
             try:
                 self.db.save_job(asdict(job))
                 logger.info(f"Saved job {job.id} to database.")
             except Exception as e:
                 logger.error(f"Failed to save job {job.id} to database: {e}")
-
-        # Save to file (backup/legacy compatibility)
-        cache_path = self._get_cache_path(job.id)
-        try:
-            with open(cache_path, "w", encoding="utf-8") as f:
-                json.dump(asdict(job), f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to save job {job.id} to file cache: {e}")
 
     def extract_job_details(
         self,
@@ -173,14 +142,24 @@ class JobDetailsExtractor:
         page = self.browser.page
 
         try:
-            # Wait for any of the main job page elements to appear
+            # Wait for any of the main job page elements to appear (shorter timeout)
+            # We wait for the most common success selector
             try:
-                page.wait_for_selector(", ".join(JOB_PAGE_WAIT_SELECTORS), timeout=10000)
+                page.wait_for_selector(", ".join(JOB_PAGE_WAIT_SELECTORS), timeout=5000)
             except Exception:
-                logger.warning(f"Wait for job details timed out for {job_id}. Current URL: {page.url}")
+                # If success selectors don't show, check if an error state is already visible
+                if not self._check_presence(page, JOB_ERROR_SELECTORS):
+                    logger.warning(f"Wait for job details timed out for {job_id} after 5s. Using current state.")
+
+            # Check for early exit/error states
+            if self._check_presence(page, JOB_ERROR_SELECTORS):
+                logger.info(f"Page error detected for {job_id}. Triggering LLM fallback extraction.")
+                return self._extract_from_page_text(
+                    JobDetails(job_id, "", "", "", "", "", "", "", "", "", job_url), page.inner_text("body")
+                )
 
             # Check for login walls
-            if page.locator(", ".join(LOGIN_MODAL_SELECTORS)).count() > 0:
+            if self._check_presence(page, LOGIN_MODAL_SELECTORS):
                 logger.debug(f"Login modal detected on job page {job_id}. Attempting to extract what's visible.")
 
             # Let's try to be smart about extracting them.
@@ -357,6 +336,16 @@ class JobDetailsExtractor:
             except Exception:
                 continue
         return ""
+
+    def _check_presence(self, root: Any, selectors: List[str]) -> bool:
+        """Checks if any of the selectors are present on the page."""
+        for selector in selectors:
+            try:
+                if root.locator(selector).count() > 0:
+                    return True
+            except Exception:
+                continue
+        return False
 
     def extract_multiple_jobs(self, job_list: List[Any], delay: float = 2.0, force: bool = False) -> List[JobDetails]:
         """

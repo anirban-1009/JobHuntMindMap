@@ -91,8 +91,10 @@ class MindMapApp:
                         all_results.extend(results)
 
                 unique = {job.id: job for job in all_results if job.id}.values()
-                print(f"{Fore.CYAN}\nTotal unique jobs found: {len(unique)}")
-                for job in list(unique)[:10]:
+                filtered = self._filter_jobs(list(unique))
+
+                print(f"{Fore.CYAN}\nTotal unique jobs found: {len(filtered)} (after filtering)")
+                for job in filtered[:10]:
                     print(f"- {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
         except Exception as error:
             print(f"{Fore.RED}Search failed: {error}")
@@ -110,13 +112,29 @@ class MindMapApp:
 
                 all_found = []
                 cfg = self.config.get("search", {})
+                seen_searches = set()
+
                 for kw in cfg.get("keywords", []):
                     for loc in self._get_locations():
-                        all_found.extend(
-                            searcher.search(kw, loc, cfg.get("filters", {}), cfg.get("location_type", "Any"))
-                        )
+                        search_key = f"{kw}|{loc}"
+                        if search_key in seen_searches:
+                            continue
+
+                        results = searcher.search(kw, loc, cfg.get("filters", {}), cfg.get("location_type", "Any"))
+                        all_found.extend(results)
+                        seen_searches.add(search_key)
+
+                        # Optimization: if we found many jobs in this location for this keyword,
+                        # maybe we don't need to search sub-locations?
+                        # (Optional: stop after first location if results > 15)
+                        if len(results) >= 15:
+                            logger.debug(
+                                f"Found {len(results)} jobs for '{kw}' in '{loc}', skipping other locations for this keyword."
+                            )
+                            break
 
                 unique = list({job.id: job for job in all_found if job.id}.values())
+                filtered = self._filter_jobs(unique)
 
                 # Fast Scoring
                 resume_data = self.resume_service.get_resume_data()
@@ -128,7 +146,7 @@ class MindMapApp:
 
                 fast_scorer = FastScorer(skills)
                 scored_jobs = []
-                for job in unique:
+                for job in filtered:
                     f_score = fast_scorer.score_result(job)
                     if f_score >= min_fast_score:
                         scored_jobs.append((f_score, job))
@@ -145,6 +163,7 @@ class MindMapApp:
                     return
 
                 print(f"{Fore.CYAN}Extracting details for {len(final_jobs)} prioritized jobs...")
+                # Only pass force to extraction, scoring handles its own force
                 details = extractor.extract_multiple_jobs(final_jobs, force=force)
                 print(f"{Fore.GREEN}Scraped {len(details)} / {len(final_jobs)} jobs.")
 
@@ -153,7 +172,8 @@ class MindMapApp:
                     resume_path = pathlib.Path(self.config.get("user", {}).get("resume_path", "data/resume.pdf"))
                     resume_text = PDFResumeParser().extract_text(resume_path)
                     for job in details:
-                        res = self.analysis_service.score_job(job, resume_text)
+                        # Skip if already scored, unless force is used
+                        res = self.analysis_service.score_job(job, resume_text, force=force)
                         if res:
                             color = Fore.GREEN if res.score >= 70 else Fore.YELLOW
                             print(f"[{job.id}] {color}Score {res.score}{Fore.RESET} - {job.title} @ {job.company}")
@@ -230,17 +250,20 @@ class MindMapApp:
     def notify(self, min_score: int) -> None:
         """Send job digest emails for jobs meeting the score threshold."""
         print(f"{Fore.CYAN}Preparing notifications...")
-        # (Same logic as before, delegating to EmailService)
         extractor = JobDetailsExtractor(None)
-        cache_dir = pathlib.Path("data/job_cache")
+        if not extractor.db:
+            return
+
+        analyses = extractor.db.get_all_analyses(min_score=min_score)
         scored_jobs = []
-        for cache_file in cache_dir.glob("*_analysis.json"):
-            with open(cache_file, "r") as json_file:
-                data = json.load(json_file)
-                if data.get("score", 0) >= min_score:
-                    job = extractor.get_cached_job(cache_file.stem.replace("_analysis", ""))
-                    if job:
-                        scored_jobs.append({"job": job, "score": SimpleNamespace(**data)})
+        for row in analyses:
+            try:
+                data = json.loads(row["analysis_data"])
+                job = extractor.get_cached_job(row["id"])
+                if job:
+                    scored_jobs.append({"job": job, "score": SimpleNamespace(**data)})
+            except Exception as e:
+                logger.warning(f"Failed to process analysis for {row['id']}: {e}")
 
         if scored_jobs:
             EmailService(self.config).send_job_digest(scored_jobs)
@@ -363,3 +386,25 @@ class MindMapApp:
         print(f"\n{Fore.CYAN}{'=' * 40}")
         print(f"{Fore.GREEN}Summary: Found {total_connections} connections across {jobs_with_connections} jobs.")
         print(f"{Fore.CYAN}{'=' * 40}")
+
+    def prune(self) -> None:
+        """Prune orphaned records from Obsidian."""
+        from src.generator.sync_service import SyncService
+
+        SyncService(self.config).prune_vault()
+
+    def _filter_jobs(self, jobs: List[Any]) -> List[Any]:
+        """Filters jobs based on exclude_keywords in configuration."""
+        exclude = self.config.get("search", {}).get("exclude_keywords", [])
+        if not exclude:
+            return jobs
+
+        filtered = []
+        for job in jobs:
+            title = (getattr(job, "title", "") or job.get("title", "") or "").lower()
+            if not any(word.lower() in title for word in exclude):
+                filtered.append(job)
+            else:
+                logger.debug(f"Filtering out job due to keyword match: {title}")
+
+        return filtered

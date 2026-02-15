@@ -107,7 +107,15 @@ JOB_POSTED_DATE_SELECTORS = [
     ".topcard__flavor--metadata.posted-time-ago__text",
 ]
 
-# --- MODAL & AUTHWALL SELECTORS ---
+# --- MODAL, AUTHWALL & ERROR SELECTORS ---
+
+JOB_ERROR_SELECTORS = [
+    ".jobs-details-error",
+    ".artdeco-empty-state",
+    ".error-container",
+    "text=No longer accepting applications",
+    "text=Security Check",
+]
 
 LOGIN_MODAL_SELECTORS = [
     ".modal--contextual-sign-in",

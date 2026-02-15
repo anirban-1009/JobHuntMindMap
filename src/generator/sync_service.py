@@ -1,6 +1,6 @@
 import json
-import pathlib
-from typing import Any, Dict
+import re
+from typing import Any, Dict, Set
 
 from src.core.relevance_scorer import ScoringResult
 from src.generator.dashboard_generator import DashboardGenerator
@@ -38,49 +38,57 @@ class SyncService:
         logger.info("Obsidian sync complete.")
 
     def _sync_jobs_and_companies(self) -> None:
-        """Reads cached jobs and writes them to the Vault."""
-        cache_dir = pathlib.Path("data/job_cache")
-        if not cache_dir.exists():
-            logger.warning("Job cache directory not found. Nothing to sync.")
+        """Reads jobs from the database and writes them to the Vault."""
+        if not self.extractor.db:
+            logger.warning("Database not available. Nothing to sync.")
             return
+
+        all_jobs_data = self.extractor.db.get_all_jobs(limit=10000)
+        if not all_jobs_data:
+            logger.warning("No jobs found in database to sync.")
+            return
+
+        logger.info(f"Syncing {len(all_jobs_data)} jobs from database...")
 
         # Track companies to generate company notes later
         companies = set()
+        synced_count = 0
 
-        for job_file in cache_dir.glob("*.json"):
-            # Skip analysis files, looking only for job files (numeric IDs)
-            if "_" in job_file.stem or not job_file.stem.isdigit():
-                continue
-
-            job_id = job_file.stem
+        for job_data in all_jobs_data:
+            job_id = job_data["id"]
             job = self.extractor.get_cached_job(job_id)
             if not job:
+                logger.warning(f"Could not load job {job_id} for sync.")
                 continue
 
-            # Load Analysis if available
-            score = self._load_analysis(job_id)
+            # Load Analysis if available (from DB)
+            score = self._load_analysis(job_data)
 
             # Generate Job Note
             self._write_job_note(job, score)
+            synced_count += 1
 
             # Track Company
             if job.company and job.company != "Unknown":
                 companies.add(job.company)
 
+        logger.info(f"Synced {synced_count} job notes.")
+
         # Generate Company Notes
         for company_name in companies:
             self._write_company_note(company_name)
 
-    def _load_analysis(self, job_id: str) -> ScoringResult:
-        """Loads analysis for a job, returning a default if not found."""
-        analysis_path = pathlib.Path(f"data/job_cache/{job_id}_analysis.json")
-        if analysis_path.exists():
+        logger.info(f"Synced {len(companies)} company notes.")
+
+    def _load_analysis(self, job_data: Dict[str, Any]) -> ScoringResult:
+        """Loads analysis for a job from DB record, returning a default if not found."""
+        analysis_json = job_data.get("analysis_data")
+        if analysis_json:
             try:
-                with open(analysis_path, "r") as f:
-                    data = json.load(f)
-                    return ScoringResult(**data)
+                data = json.loads(analysis_json)
+                return ScoringResult(**data)
             except Exception as e:
-                logger.warning(f"Failed to load analysis for {job_id}: {e}")
+                logger.warning(f"Failed to load analysis for job {job_data.get('id')}: {e}")
 
         # Default "Unscored" Result
         return ScoringResult(
@@ -179,3 +187,36 @@ class SyncService:
             self.vault_manager.write_file(content, filename, "companies")
         except Exception as e:
             logger.error(f"Failed to write company note for {company_name}: {e}")
+
+    def prune_vault(self) -> None:
+        """Removes job files from the vault that are no longer in the database."""
+        logger.info("Pruning Obsidian vault...")
+
+        if not self.extractor.db:
+            logger.error("Database not available for pruning.")
+            return
+
+        db_jobs = self.extractor.db.get_all_jobs(limit=10000)
+        db_ids: Set[str] = {str(job["id"]) for job in db_jobs}
+
+        jobs_folder = self.vault_manager.vault_path / self.vault_manager.folders.get("jobs", "Jobs")
+        if not jobs_folder.exists():
+            logger.warning(f"Jobs folder not found at {jobs_folder}")
+            return
+
+        removed_count = 0
+        for file_path in jobs_folder.rglob("*.md"):
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                # Look for "- **Job ID:** {id}"
+                match = re.search(r"- \*\*Job ID:\*\* (\d+)", content)
+                if match:
+                    job_id = match.group(1)
+                    if job_id not in db_ids:
+                        logger.info(f"Removing orphaned job note: {file_path.name} (ID: {job_id})")
+                        file_path.unlink()
+                        removed_count += 1
+            except Exception as e:
+                logger.warning(f"Could not process {file_path}: {e}")
+
+        logger.info(f"Pruning complete. Removed {removed_count} orphaned job notes.")

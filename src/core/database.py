@@ -46,6 +46,8 @@ class DatabaseManager:
             salary TEXT,
             apply_link TEXT,
             raw_data TEXT,
+            relevance_score INTEGER,
+            analysis_data TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'new'
@@ -108,11 +110,13 @@ class DatabaseManager:
         INSERT INTO jobs (
             id, title, company, location, description, posted_date,
             seniority_level, employment_type, job_function, industries,
-            link, salary, apply_link, raw_data, status
+            link, salary, apply_link, raw_data, status,
+            relevance_score, analysis_data
         ) VALUES (
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
-            ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?,
+            ?, ?
         )
         ON CONFLICT(id) DO UPDATE SET
             title=excluded.title,
@@ -128,6 +132,8 @@ class DatabaseManager:
             salary=excluded.salary,
             apply_link=excluded.apply_link,
             raw_data=excluded.raw_data,
+            relevance_score=COALESCE(excluded.relevance_score, jobs.relevance_score),
+            analysis_data=COALESCE(excluded.analysis_data, jobs.analysis_data),
             updated_at=CURRENT_TIMESTAMP
         """
 
@@ -155,6 +161,8 @@ class DatabaseManager:
             job_data.get("apply_link"),
             raw_data_str,
             job_data.get("status", "new"),
+            job_data.get("relevance_score"),
+            job_data.get("analysis_data"),
         )
 
         try:
@@ -224,4 +232,27 @@ class DatabaseManager:
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to get requests for job {job_id}: {e}")
+            return []
+
+    def save_analysis(self, job_id: str, score: int, analysis_data: str):
+        """Updates a job with analysis results."""
+        query = "UPDATE jobs SET relevance_score = ?, analysis_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        try:
+            with self._get_connection() as conn:
+                conn.execute(query, (score, analysis_data, job_id))
+                conn.commit()
+                logger.info(f"Saved analysis for job {job_id}.")
+        except Exception as e:
+            logger.error(f"Failed to save analysis for job {job_id}: {e}")
+            raise
+
+    def get_all_analyses(self, min_score: int = 0) -> List[Dict[str, Any]]:
+        """Retrieves all jobs that have analysis data."""
+        query = "SELECT id, relevance_score, analysis_data FROM jobs WHERE analysis_data IS NOT NULL AND relevance_score >= ?"
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(query, (min_score,))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get analyses: {e}")
             return []

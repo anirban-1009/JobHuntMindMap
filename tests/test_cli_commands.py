@@ -198,8 +198,6 @@ class TestCLIJobAnalysis:
         mock_parser.extract_text.return_value = "Resume Text"
         mock_extractor = mock_extractor_class.return_value
         mock_extractor.get_cached_job.return_value = MagicMock(id="1")
-        mock_extractor.cache_dir = pathlib.Path("data/job_cache")
-        mock_extractor.cache_dir.mkdir(parents=True, exist_ok=True)
         mock_analysis_service = mock_analysis_service_class.return_value
         mock_analysis_service.score_job.return_value = ScoringResult(
             score=85, matching_skills=["A"], missing_skills=["B"], reasoning="Great fit"
@@ -224,11 +222,6 @@ class TestCLIJobAnalysis:
         mock_analysis_service.run_gap_analysis.return_value = MagicMock(
             skill_frequency={"Python": 2}, improvement_plan="Learn Python"
         )
-        job_cache = pathlib.Path("data/job_cache")
-        job_cache.mkdir(parents=True, exist_ok=True)
-        analysis_file = job_cache / "gap_analysis_test_analysis.json"
-        with open(analysis_file, "w") as f:
-            json.dump({"score": 80, "matching_skills": ["A"], "missing_skills": ["B"], "reasoning": "R"}, f)
 
         result = runner.invoke(cli, ["analyze-gaps", "--config", str(mock_config)])
         assert result.exit_code == 0
@@ -245,13 +238,19 @@ class TestCLIJobAnalysis:
         mock_config: pathlib.Path,
     ) -> None:
         """Verify the 'notify' command sends digests for high-scoring jobs."""
-        job_cache = pathlib.Path("data/job_cache")
-        job_cache.mkdir(parents=True, exist_ok=True)
-        analysis_file = job_cache / "notify_test_analysis.json"
-        with open(analysis_file, "w") as f:
-            json.dump({"score": 80, "matching_skills": ["A"], "missing_skills": ["B"], "reasoning": "R"}, f)
         mock_extractor = mock_extractor_class.return_value
+        mock_db = MagicMock()
+        mock_extractor.db = mock_db
+
+        mock_analysis_row = {
+            "id": "notify_test",
+            "analysis_data": json.dumps(
+                {"score": 80, "matching_skills": ["A"], "missing_skills": ["B"], "reasoning": "R"}
+            ),
+        }
+        mock_db.get_all_analyses.return_value = [mock_analysis_row]
         mock_extractor.get_cached_job.return_value = MagicMock(id="notify_test")
+
         mock_service = mock_service_class.return_value
         mock_service.send_job_digest.return_value = True
 

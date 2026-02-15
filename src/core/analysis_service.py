@@ -1,5 +1,4 @@
 import json
-import pathlib
 from dataclasses import asdict
 from typing import Any, List, Optional
 
@@ -26,43 +25,57 @@ class AnalysisService:
         self.scorer = RelevanceScorer(llm_client)
         self.gap_analyzer = GapAnalyzer(llm_client)
         self.extractor = JobDetailsExtractor(None)
-        self.cache_dir = pathlib.Path("data/job_cache")
 
-    def score_job(self, job: JobDetails, resume_text: str) -> Optional[ScoringResult]:
-        """Scores a single job and saves the analysis."""
+    def score_job(self, job: JobDetails, resume_text: str, force: bool = False) -> Optional[ScoringResult]:
+        """Scores a single job and saves the analysis, unless already scored."""
+        if not force and self.extractor.db:
+            job_data = self.extractor.db.get_job(job.id)
+            if job_data and job_data.get("relevance_score") is not None and job_data.get("analysis_data"):
+                try:
+                    data = json.loads(job_data["analysis_data"])
+                    logger.info(f"Using cached analysis for job {job.id}")
+                    return ScoringResult(**data)
+                except Exception as e:
+                    logger.warning(f"Failed to load cached analysis for job {job.id}: {e}")
+
+        # Perform scoring if not found or forced
         result = self.scorer.score_job(resume_text, job)
-        if result:
-            output_path = self.cache_dir / f"{job.id}_analysis.json"
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            with open(output_path, "w", encoding="utf-8") as f:
-                json.dump(asdict(result), f, indent=2)
+        if result and self.extractor.db:
+            analysis_json = json.dumps(asdict(result))
+            self.extractor.db.save_analysis(job.id, result.score, analysis_json)
             return result
-        return None
+        return result
 
     def score_all_cached_jobs(self, resume_text: str) -> List[tuple[JobDetails, ScoringResult]]:
-        """Scores all jobs found in the cache."""
+        """Scores all jobs found in the database that haven't been scored or need refreshing."""
+        if not self.extractor.db:
+            return []
+
+        all_jobs = self.extractor.db.get_all_jobs(limit=1000)
         scored = []
-        for f in self.cache_dir.glob("*.json"):
-            if "_" not in f.stem and f.stem.isdigit():
-                job = self.extractor.get_cached_job(f.stem)
-                if job:
-                    result = self.score_job(job, resume_text)
-                    if result:
-                        scored.append((job, result))
+        for job_data in all_jobs:
+            # Reconstruct JobDetails from DB
+            job = self.extractor.get_cached_job(job_data["id"])
+            if job:
+                result = self.score_job(job, resume_text)
+                if result:
+                    scored.append((job, result))
         return scored
 
     def run_gap_analysis(self, min_score: int) -> Any:
-        """Runs gap analysis across high-scoring jobs."""
+        """Runs gap analysis across high-scoring jobs using database records."""
+        if not self.extractor.db:
+            return None
+
+        analyses = self.extractor.db.get_all_analyses(min_score=min_score)
         results = []
-        for f in self.cache_dir.glob("*_analysis.json"):
+        for row in analyses:
             try:
-                with open(f, "r", encoding="utf-8") as jf:
-                    data = json.load(jf)
-                    res = ScoringResult(**data)
-                    if res.score >= min_score:
-                        results.append(res)
+                data = json.loads(row["analysis_data"])
+                res = ScoringResult(**data)
+                results.append(res)
             except Exception as e:
-                logger.warning(f"Failed to load analysis {f}: {e}")
+                logger.warning(f"Failed to load analysis for {row['id']}: {e}")
 
         if not results:
             return None

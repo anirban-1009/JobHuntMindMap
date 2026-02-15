@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, mock_open, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -61,18 +61,21 @@ class TestSyncService:
         assert sync_service._determine_specialization(job) == "General"
 
     def test_load_analysis_success(self, sync_service):
-        mock_data = {"score": 85, "reasoning": "Test", "matching_skills": ["Python"], "missing_skills": []}
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("builtins.open", mock_open(read_data=json.dumps(mock_data))):
-                result = sync_service._load_analysis("123")
-                assert result.score == 85
-                assert result.matching_skills == ["Python"]
+        mock_job_data = {
+            "id": "123",
+            "analysis_data": json.dumps(
+                {"score": 85, "reasoning": "Test", "matching_skills": ["Python"], "missing_skills": []}
+            ),
+        }
+        result = sync_service._load_analysis(mock_job_data)
+        assert result.score == 85
+        assert result.matching_skills == ["Python"]
 
     def test_load_analysis_not_found(self, sync_service):
-        with patch("pathlib.Path.exists", return_value=False):
-            result = sync_service._load_analysis("123")
-            assert result.score == 0
-            assert "not been scored" in result.reasoning
+        mock_job_data = {"id": "123", "analysis_data": None}
+        result = sync_service._load_analysis(mock_job_data)
+        assert result.score == 0
+        assert "not been scored" in result.reasoning
 
     def test_sync_success(self, sync_service):
         sync_service._sync_jobs_and_companies = MagicMock()
@@ -81,25 +84,21 @@ class TestSyncService:
         sync_service._sync_jobs_and_companies.assert_called_once()
         sync_service.dashboard_generator.generate.assert_called_once()
 
-    @patch("pathlib.Path.glob")
     @patch("src.generator.sync_service.SyncService._load_analysis")
     @patch("src.generator.sync_service.SyncService._write_job_note")
     @patch("src.generator.sync_service.SyncService._write_company_note")
-    def test_sync_jobs_and_companies(
-        self, mock_write_company, mock_write_job, mock_load_analysis, mock_glob, sync_service
-    ):
-        # Mock glob to return some job files
-        mock_file = MagicMock()
-        mock_file.stem = "123"
-        mock_glob.return_value = [mock_file]
+    def test_sync_jobs_and_companies(self, mock_write_company, mock_write_job, mock_load_analysis, sync_service):
+        # Mock database to return some job rows
+        mock_db = MagicMock()
+        sync_service.extractor.db = mock_db
+        mock_db.get_all_jobs.return_value = [{"id": "123"}]
 
         # Mock extractor to return a job
         mock_job = MagicMock(spec=JobDetails)
         mock_job.company = "TestCo"
         sync_service.extractor.get_cached_job.return_value = mock_job
 
-        with patch("pathlib.Path.exists", return_value=True):
-            sync_service._sync_jobs_and_companies()
+        sync_service._sync_jobs_and_companies()
 
         mock_write_job.assert_called_once()
         mock_write_company.assert_called_once_with("TestCo")

@@ -29,38 +29,38 @@ class TestAnalysisService:
         mock_result = ScoringResult(score=90, matching_skills=["A"], missing_skills=["B"], reasoning="Good")
         analysis_service.scorer.score_job.return_value = mock_result
 
-        with patch("builtins.open", MagicMock()):
-            with patch("json.dump") as mock_dump:
-                res = analysis_service.score_job(job, "Resume content")
-                assert res == mock_result
-                mock_dump.assert_called_once()
+        # Mock extractor.db
+        analysis_service.extractor.db = MagicMock()
+
+        res = analysis_service.score_job(job, "Resume content")
+        assert res == mock_result
+        analysis_service.extractor.db.save_analysis.assert_called_once()
 
     def test_score_all_cached_jobs(self, analysis_service):
-        with (
-            patch("pathlib.Path.glob") as mock_glob,
-            patch("src.ingest.job_details_extractor.JobDetailsExtractor.get_cached_job") as mock_get_job,
-        ):
-            mock_file = MagicMock()
-            mock_file.stem = "123"
-            mock_glob.return_value = [mock_file]
+        # Mock extractor.db
+        mock_db = MagicMock()
+        analysis_service.extractor.db = mock_db
 
-            mock_job = MagicMock(spec=JobDetails)
-            mock_job.id = "123"
-            mock_get_job.return_value = mock_job
+        mock_job_row = {"id": "123"}
+        mock_db.get_all_jobs.return_value = [mock_job_row]
 
+        mock_job = MagicMock(spec=JobDetails)
+        mock_job.id = "123"
+
+        with patch.object(analysis_service.extractor, "get_cached_job", return_value=mock_job):
             analysis_service.score_job = MagicMock()
-
             analysis_service.score_all_cached_jobs("Resume text")
             analysis_service.score_job.assert_called_once_with(mock_job, "Resume text")
 
     def test_run_gap_analysis(self, analysis_service):
-        with patch("pathlib.Path.glob") as mock_glob:
-            mock_file = MagicMock()
-            mock_file.stem = "123_analysis"
-            mock_glob.return_value = [mock_file]
+        mock_db = MagicMock()
+        analysis_service.extractor.db = mock_db
 
-            mock_data = {"score": 85, "matching_skills": [], "missing_skills": ["X"], "reasoning": "Y"}
-            with patch("builtins.open", MagicMock()):
-                with patch("json.load", return_value=mock_data):
-                    analysis_service.run_gap_analysis(min_score=80)
-                    analysis_service.gap_analyzer.analyze_gaps.assert_called_once()
+        mock_analysis_row = {
+            "id": "123",
+            "analysis_data": '{"score": 85, "matching_skills": [], "missing_skills": ["X"], "reasoning": "Y"}',
+        }
+        mock_db.get_all_analyses.return_value = [mock_analysis_row]
+
+        analysis_service.run_gap_analysis(min_score=80)
+        analysis_service.gap_analyzer.analyze_gaps.assert_called_once()
