@@ -45,9 +45,10 @@ def search(config, headless):
 @click.option("--force", is_flag=True, default=False, help="Force re-scrape")
 @click.option("--min-fast-score", type=int, default=0, help="Minimum initial NLP score (0-100)")
 @click.option("--score", is_flag=True, default=False, help="Perform LLM scoring after scraping")
-def scrape(config, headless, limit, force, min_fast_score, score):
-    """Scrape details for found jobs."""
-    MindMapApp(config).scrape(headless, limit, force, min_fast_score, score)
+@click.argument("job_id", required=False)
+def scrape(config, headless, limit, force, min_fast_score, score, job_id):
+    """Scrape details for found jobs (or a specific job ID)."""
+    MindMapApp(config).scrape(headless, limit, force, min_fast_score, score, job_id)
 
 
 @cli.command()
