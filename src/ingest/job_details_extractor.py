@@ -44,6 +44,7 @@ class JobDetails:
     link: str
     salary: str = ""
     apply_link: str = ""
+    created_at: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
 
 

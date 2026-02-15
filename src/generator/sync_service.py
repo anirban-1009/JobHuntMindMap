@@ -107,7 +107,8 @@ class SyncService:
             content = self.template_manager.render_job(job, score, specialization=specialization)
             filename = f"{job.title} - {job.company}.md"
 
-            self.vault_manager.write_file(content, filename, "jobs", subfolder=specialization)
+            file_path = self.vault_manager.write_file(content, filename, "jobs", subfolder=specialization)
+            logger.info(f"Created/Updated job note: {file_path.relative_to(self.vault_manager.vault_path)}")
         except Exception as e:
             logger.error(f"Failed to write job note for {job.id}: {e}")
 
