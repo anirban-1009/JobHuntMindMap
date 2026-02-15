@@ -1,4 +1,3 @@
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,11 +23,14 @@ class TestJobDetailsExtractor:
         return llm
 
     @pytest.fixture
-    def extractor(self, mock_browser_manager, mock_llm, tmp_path):
-        return JobDetailsExtractor(mock_browser_manager, llm_client=mock_llm, cache_dir=tmp_path)
+    def extractor(self, mock_browser_manager, mock_llm):
+        with patch("src.ingest.job_details_extractor.DatabaseManager") as mock_db:
+            extractor = JobDetailsExtractor(mock_browser_manager, llm_client=mock_llm)
+            extractor.db = mock_db.return_value
+            return extractor
 
-    def test_get_cached_job_exists(self, extractor, tmp_path):
-        """Test loading job from cache when it exists."""
+    def test_get_cached_job_exists(self, extractor):
+        """Test loading job from database when it exists."""
         job_id = "123"
         job_data = {
             "id": job_id,
@@ -46,9 +48,7 @@ class TestJobDetailsExtractor:
             "apply_link": "https://apply.com",
             "raw_data": None,
         }
-        cache_file = tmp_path / f"{job_id}.json"
-        with open(cache_file, "w") as f:
-            json.dump(job_data, f)
+        extractor.db.get_job.return_value = job_data
 
         job = extractor.get_cached_job(job_id)
         assert job is not None
@@ -56,7 +56,8 @@ class TestJobDetailsExtractor:
         assert job.title == "Dev"
 
     def test_get_cached_job_not_exists(self, extractor):
-        """Test returning None when job is not in cache."""
+        """Test returning None when job is not in database."""
+        extractor.db.get_job.return_value = None
         assert extractor.get_cached_job("999") is None
 
     def test_extract_job_details_from_cache(self, extractor, mock_browser_manager):
@@ -126,9 +127,8 @@ class TestJobDetailsExtractor:
         assert result.employment_type == "Full-time"
         assert result.seniority_level == "Mid-Senior level"
 
-        # Verify cache file created
-        cache_path = extractor.cache_dir / f"{job_id}.json"
-        assert cache_path.exists()
+        # Verify DB save called
+        extractor.db.save_job.assert_called_once()
 
     def test_extract_job_details_failure(self, extractor, mock_browser_manager):
         """Test behavior when extraction fails (e.g. timeout)."""
@@ -259,21 +259,18 @@ class TestJobDetailsExtractor:
         result = extractor.extract_job_details(job_id, "url")
         assert result.title == "Behind Wall"
 
-    def test_save_to_cache_permission_error(self, extractor, tmp_path):
-        """Test error handling when saving to cache fails."""
+    def test_save_to_cache_db_error(self, extractor):
+        """Test error handling when saving to database fails."""
         job = JobDetails("err", "Title", "", "", "", "", "", "", "", "", "")
 
-        # Mock open to raise PermissionError
-        with patch("builtins.open", side_effect=PermissionError("Boom")):
-            # Should not raise exception
-            extractor._save_to_cache(job)
+        extractor.db.save_job.side_effect = Exception("Boom")
+        # Should not raise exception
+        extractor._save_to_cache(job)
 
-    def test_get_cached_job_corrupt(self, extractor, tmp_path):
-        """Test error handling when cache file is corrupt."""
-        job_id = "corrupt"
-        cache_file = tmp_path / f"{job_id}.json"
-        with open(cache_file, "w") as f:
-            f.write("{invalid json")
+    def test_get_cached_job_db_error(self, extractor):
+        """Test error handling when database get fails."""
+        job_id = "fail"
+        extractor.db.get_job.side_effect = Exception("error")
 
         job = extractor.get_cached_job(job_id)
         assert job is None

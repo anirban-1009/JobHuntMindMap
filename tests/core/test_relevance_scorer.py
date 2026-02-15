@@ -3,8 +3,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.core.ai import LLMClient
-from src.core.relevance_scorer import RelevanceScorer, ScoringResult
+from src.core.relevance_scorer import FastScorer, RelevanceScorer, ScoringResult
 from src.ingest.job_details_extractor import JobDetails
+from src.ingest.job_searcher import JobSearchResult
 
 
 class TestRelevanceScorer:
@@ -64,3 +65,33 @@ class TestRelevanceScorer:
         result = scorer.score_job("Resume text", sample_job)
 
         assert result is None
+
+
+class TestFastScorer:
+    def test_score_result_empty_keywords(self):
+        """Test score with empty keyword list."""
+        scorer = FastScorer([])
+        result = JobSearchResult(id="1", title="Python Engineer", company="A", link="", location="")
+        assert scorer.score_result(result) == 0
+
+    def test_score_result_no_matches(self):
+        """Test score with no keyword matches."""
+        scorer = FastScorer(["Java", "Spring"])
+        result = JobSearchResult(id="1", title="Python Engineer", company="A", link="", location="")
+        assert scorer.score_result(result) == 0
+
+    def test_score_result_partial_matches(self):
+        """Test score with some keyword matches."""
+        scorer = FastScorer(["Python", "Django", "Cloud"])
+        # Matches Python and Django
+        result = JobSearchResult(id="1", title="Senior Python Django Developer", company="A", link="", location="")
+        # matches = 2, total = 3 -> (2/3)*100 = 66.6 -> +20 = 86
+        score = scorer.score_result(result)
+        assert score == 86
+
+    def test_score_result_full_matches(self):
+        """Test score with all keywords matching."""
+        scorer = FastScorer(["Python"])
+        result = JobSearchResult(id="1", title="Python Developer", company="A", link="", location="")
+        # matches = 1, total = 1 -> 100 -> min(100, 100+20) = 100
+        assert scorer.score_result(result) == 100

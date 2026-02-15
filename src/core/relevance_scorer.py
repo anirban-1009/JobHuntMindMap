@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from src.core.ai import LLMClient
 from src.ingest.job_details_extractor import JobDetails
+from src.ingest.job_searcher import JobSearchResult
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -96,3 +97,40 @@ Provide the result ONLY as a raw JSON object with these keys:
 - "missing_skills": list of strings
 - "reasoning": string
 """
+
+
+class FastScorer:
+    """Performs rapid keyword-based scoring without LLM calls."""
+
+    def __init__(self, keywords: List[str]):
+        """
+        Initialize with a list of target keywords.
+
+        Args:
+            keywords: List of skills or technologies to match.
+        """
+        self.keywords = [k.lower() for k in keywords]
+
+    def score_result(self, result: JobSearchResult) -> int:
+        """
+        Calculates a simple overlap score for a search result.
+
+        Args:
+            result: The JobSearchResult to score.
+
+        Returns:
+            int: A score from 0-100 based on keyword density in title.
+        """
+        if not self.keywords:
+            return 0
+
+        title = result.title.lower()
+        matches = sum(1 for kw in self.keywords if kw in title)
+
+        # Title matches are weighted heavily
+        score = (matches / len(self.keywords)) * 100
+        # Boost if title contains exact matches for key skills
+        if matches > 0:
+            score = min(100, score + 20)
+
+        return int(score)
