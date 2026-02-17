@@ -43,6 +43,8 @@ class TemplateManager:
         score: ScoringResult,
         specialization: str = "General",
         people: Optional[List[Dict[str, str]]] = None,
+        referrals: Optional[List[Dict[str, Any]]] = None,
+        resume_data: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Renders the Job.md template.
@@ -52,13 +54,24 @@ class TemplateManager:
             score: ScoringResult object.
             specialization: Job specialization tag.
             people: List of person dictionaries (name, filename, title).
+            referrals: List of referral request dictionaries.
+            resume_data: Dictionary containing candidate's resume data.
 
         Returns:
             Rendered Markdown string.
         """
         people = people or []
+        referrals = referrals or []
+        resume_data = resume_data or {}
         template = self.env.get_template("Job.md.j2")
-        return template.render(job=job, score=score, specialization=specialization, people=people)
+        return template.render(
+            job=job,
+            score=score,
+            specialization=specialization,
+            people=people,
+            referrals=referrals,
+            resume=resume_data,
+        )
 
     def render_company(
         self,
@@ -95,20 +108,30 @@ class TemplateManager:
             people=people,
         )
 
-    def render_person(self, person: Connection, jobs: Optional[List[Dict[str, str]]] = None) -> str:
+    def render_person(
+        self,
+        person: Connection,
+        jobs: Optional[List[Dict[str, str]]] = None,
+        referrals: Optional[List[Dict[str, Any]]] = None,
+        resume_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         Renders the Person.md template.
 
         Args:
             person: Connection object.
             jobs: List of job dictionaries (title, filename, status).
+            referrals: List of referral request dictionaries.
+            resume_data: Dictionary containing candidate's resume data.
 
         Returns:
             Rendered Markdown string.
         """
         jobs = jobs or []
+        referrals = referrals or []
+        resume_data = resume_data or {}
         template = self.env.get_template("Person.md.j2")
-        return template.render(person=person, jobs=jobs)
+        return template.render(person=person, jobs=jobs, referrals=referrals, resume=resume_data)
 
     def render_gap_analysis(self, report: Any, min_score: int, tag: Optional[str] = None) -> str:
         """

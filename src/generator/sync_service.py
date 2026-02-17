@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Set
 from src.core.network_graph import NetworkGraphBuilder
 from src.core.referral_service import ReferralService
 from src.core.relevance_scorer import ScoringResult
+from src.core.resume_service import ResumeService
 from src.generator.dashboard_generator import DashboardGenerator
 from src.generator.template_manager import TemplateManager
 from src.generator.vault_manager import VaultManager
@@ -25,6 +26,8 @@ class SyncService:
         self.dashboard_generator = DashboardGenerator(config)
         self.extractor = JobDetailsExtractor(None)  # Used for cache access
         self.referral_service = ReferralService(None, config)  # LLM not needed for matching
+        self.resume_service = ResumeService(None, config.get("user", {}).get("resume_path"))
+        self.resume_data = self.resume_service.get_resume_data()
 
     def sync(self) -> None:
         """Syncs jobs, companies, and analysis to the Obsidian Vault."""
@@ -66,6 +69,22 @@ class SyncService:
         # Prepare Lookups
         company_to_jobs = {}
         company_to_people = {}
+        job_to_requests = {}
+        person_to_requests = {}
+
+        # 1. Fetch Requests (Referrals)
+        all_requests = self.extractor.db.get_all_requests()
+        for req in all_requests:
+            jid = req["job_id"]
+            pname = req["connection_name"]
+
+            if jid not in job_to_requests:
+                job_to_requests[jid] = []
+            job_to_requests[jid].append(req)
+
+            if pname not in person_to_requests:
+                person_to_requests[pname] = []
+            person_to_requests[pname].append(req)
 
         for j in jobs:
             co = j["details"].company
@@ -99,7 +118,10 @@ class SyncService:
             if not associated_jobs:
                 continue
 
-            content = self.template_manager.render_person(person, jobs=associated_jobs)
+            person_reqs = person_to_requests.get(person.full_name, [])
+            content = self.template_manager.render_person(
+                person, jobs=associated_jobs, referrals=person_reqs, resume_data=self.resume_data
+            )
             self.vault_manager.write_file(content, f"{person.full_name}.md", "people")
 
         # 2. Sync Jobs
@@ -115,7 +137,15 @@ class SyncService:
 
             # specialization = self._determine_specialization(job)
             specialization = job.specialization
-            content = self.template_manager.render_job(job, score, specialization=specialization, people=people_at_co)
+            job_reqs = job_to_requests.get(job.id, [])
+            content = self.template_manager.render_job(
+                job,
+                score,
+                specialization=specialization,
+                people=people_at_co,
+                referrals=job_reqs,
+                resume_data=self.resume_data,
+            )
             filename = f"{job.title} - {job.company}.md"
             self.vault_manager.write_file(content, filename, "jobs", subfolder=specialization)
 

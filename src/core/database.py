@@ -237,6 +237,17 @@ class DatabaseManager:
             logger.error(f"Failed to get requests for job {job_id}: {e}")
             return []
 
+    def get_all_requests(self) -> List[Dict[str, Any]]:
+        """Retrieves all referral requests."""
+        query = "SELECT * FROM requests"
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(query)
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get all requests: {e}")
+            return []
+
     def save_analysis(self, job_id: str, score: int, analysis_data: str):
         """Updates a job with analysis results."""
         query = "UPDATE jobs SET relevance_score = ?, analysis_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"

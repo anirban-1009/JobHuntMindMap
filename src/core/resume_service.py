@@ -62,6 +62,7 @@ class ResumeService:
               "first_name": "String", "last_name": "String", "email": "String", "phone": "String",
               "linkedin": "String (URL)", "github": "String (URL)", "website": "String (URL)",
               "job_title": "String", "professional_summary": "String",
+              "total_experience_years": "Number (Total years of professional experience)",
               "experience": [ {{"title": "String", "company": "String", "dates": "String", "location": "String", "bullets": ["String"]}} ],
               "education": [ {{"institution": "String", "degree": "String", "dates": "String", "location": "String", "description": "String"}} ],
               "skills": {{ "Category": ["Skill"] }}

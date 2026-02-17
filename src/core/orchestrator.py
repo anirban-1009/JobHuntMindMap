@@ -314,7 +314,7 @@ class MindMapApp:
         SyncService(self.config).sync_from_obsidian()
         print(f"{Fore.GREEN}Sync-back complete.")
 
-    def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 190) -> Optional[Dict[str, str]]:
+    def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 300) -> Optional[Dict[str, str]]:
         """Generate personalized referral message for a job and contact."""
         job = JobDetailsExtractor(None).get_cached_job(job_id)
         if not job:
