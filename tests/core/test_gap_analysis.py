@@ -4,6 +4,7 @@ import pytest
 
 from src.core.gap_analysis import GapAnalysisResult, GapAnalyzer
 from src.core.relevance_scorer import ScoringResult
+from src.ingest.job_details_extractor import JobDetails
 
 
 class TestGapAnalyzer:
@@ -19,11 +20,19 @@ class TestGapAnalyzer:
 
     def test_analyze_gaps_success(self, analyzer):
         """Test gap analysis with common missing skills."""
+        mock_job = MagicMock(spec=JobDetails)
+        mock_job.id = "1"
+        mock_job.title = "Job 1"
+        mock_job.company = "Co 1"
+
         results = [
-            ScoringResult(score=80, matching_skills=[], missing_skills=["Python", "AWS"], reasoning=""),
-            ScoringResult(score=70, matching_skills=[], missing_skills=["AWS", "Docker"], reasoning=""),
-            ScoringResult(
-                score=60, matching_skills=[], missing_skills=["Python", "Docker", "Kubernetes"], reasoning=""
+            (mock_job, ScoringResult(score=80, matching_skills=[], missing_skills=["Python", "AWS"], reasoning="")),
+            (mock_job, ScoringResult(score=70, matching_skills=[], missing_skills=["AWS", "Docker"], reasoning="")),
+            (
+                mock_job,
+                ScoringResult(
+                    score=60, matching_skills=[], missing_skills=["Python", "Docker", "Kubernetes"], reasoning=""
+                ),
             ),
         ]
 
@@ -33,11 +42,14 @@ class TestGapAnalyzer:
         assert isinstance(analysis, GapAnalysisResult)
 
         # Verify top skills (Python: 2, AWS: 2, Docker: 2, K8s: 1)
-        # Note: Order might vary for ties, but let's check basic structure
         top_skills = analysis.top_missing_skills
         assert len(top_skills) <= 2
         assert "python" in analysis.skill_frequency
         assert analysis.skill_frequency["python"] == 2
+
+        # Verify details
+        assert len(analysis.details) == 3
+        assert analysis.details[0].job_id == "1"
 
         # Verify LLM call
         analyzer.llm.generate.assert_called_once()
@@ -49,7 +61,14 @@ class TestGapAnalyzer:
 
     def test_analyze_gaps_no_missing_skills(self, analyzer):
         """Test behavior when results exist but no skills are missing."""
-        results = [ScoringResult(score=100, matching_skills=["All"], missing_skills=[], reasoning="Perfect match")]
+        mock_job = MagicMock(spec=JobDetails)
+        mock_job.id = "1"
+        mock_job.title = "Job 1"
+        mock_job.company = "Co 1"
+
+        results = [
+            (mock_job, ScoringResult(score=100, matching_skills=["All"], missing_skills=[], reasoning="Perfect match"))
+        ]
         analysis = analyzer.analyze_gaps(results)
 
         assert analysis is not None

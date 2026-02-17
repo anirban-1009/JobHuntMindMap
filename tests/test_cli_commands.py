@@ -46,8 +46,16 @@ def mock_config(tmp_path: pathlib.Path) -> pathlib.Path:
     config_data = {
         "search": {"keywords": ["Python"], "location": "Remote", "location_type": "Remote", "filters": {}},
         "ai": {"provider": "ollama", "ollama": {"model_name": "llama3"}},
-        "user": {"resume_path": "data/resume.pdf", "email": "user@example.com"},
+        "user": {
+            "resume_path": "data/resume.pdf",
+            "email": "user@example.com",
+            "linkedin_connections_path": "data/Connections.csv",
+        },
         "notifications": {"email": {"enabled": True}},
+        "obsidian": {
+            "vault_path": str(tmp_path / "vault"),
+            "folders": {"jobs": "Jobs", "companies": "Companies", "people": "People", "analysis": "Analysis"},
+        },
     }
     config_file = tmp_path / "test_config.yaml"
     with open(config_file, "w") as f:

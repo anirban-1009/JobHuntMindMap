@@ -9,7 +9,7 @@ from src.core.relevance_scorer import ScoringResult
 from src.generator.dashboard_generator import DashboardGenerator
 from src.generator.template_manager import TemplateManager
 from src.generator.vault_manager import VaultManager
-from src.ingest.job_details_extractor import JobDetails, JobDetailsExtractor
+from src.ingest.job_details_extractor import JobDetailsExtractor
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -96,6 +96,9 @@ class SyncService:
                         }
                     )
 
+            if not associated_jobs:
+                continue
+
             content = self.template_manager.render_person(person, jobs=associated_jobs)
             self.vault_manager.write_file(content, f"{person.full_name}.md", "people")
 
@@ -110,7 +113,8 @@ class SyncService:
                 for p in company_to_people[job.company]:
                     people_at_co.append({"name": p.full_name, "filename": f"{p.full_name}", "title": p.position})
 
-            specialization = self._determine_specialization(job)
+            # specialization = self._determine_specialization(job)
+            specialization = job.specialization
             content = self.template_manager.render_job(job, score, specialization=specialization, people=people_at_co)
             filename = f"{job.title} - {job.company}.md"
             self.vault_manager.write_file(content, filename, "jobs", subfolder=specialization)
@@ -128,6 +132,9 @@ class SyncService:
                             "status": "Active",
                         }
                     )
+
+            if not co_jobs:
+                continue
 
             co_people = []
             if co in company_to_people:
@@ -154,58 +161,6 @@ class SyncService:
             matching_skills=[],
             missing_skills=[],
         )
-
-    def _determine_specialization(self, job: JobDetails) -> str:
-        """Categorize job into typical tech specializations."""
-        title = job.title.lower()
-
-        if any(
-            x in title
-            for x in [
-                "machine learning",
-                "ml",
-                "ai ",
-                "artificial intelligence",
-                "nlp",
-                "computer vision",
-                "generative ai",
-                "llm",
-            ]
-        ):
-            return "AI_ML"
-        if any(x in title for x in ["data scientist", "data analyst", "data engineer", "big data", "analytics"]):
-            return "Data_Science"
-        if any(x in title for x in ["python", "django", "flask", "fastapi", "numpy", "pandas"]):
-            return "Python_Dev"
-        if any(
-            x in title
-            for x in ["backend", "back-end", "server", "distributed systems", "api engineer", "platform engineer"]
-        ):
-            return "Backend"
-        if any(
-            x in title
-            for x in [
-                "frontend",
-                "front-end",
-                "react",
-                "vue",
-                "angular",
-                "javascript",
-                "typescript",
-                "ui/ux",
-                "web developer",
-            ]
-        ):
-            return "Frontend"
-        if any(
-            x in title
-            for x in ["devops", "sre", "cloud", "aws", "azure", "gcp", "infrastructure", "kubernetes", "docker"]
-        ):
-            return "DevOps_Cloud"
-        if any(x in title for x in ["full stack", "fullstack"]):
-            return "FullStack"
-
-        return "General"
 
     def prune_vault(self) -> None:
         """Removes job files from the vault that are no longer in the database."""
@@ -238,4 +193,79 @@ class SyncService:
             except Exception as e:
                 logger.warning(f"Could not process {file_path}: {e}")
 
-        logger.info(f"Pruning complete. Removed {removed_count} orphaned job notes.")
+        # 2. Prune People and Companies (ones with no jobs)
+        for folder_key in ["people", "companies"]:
+            folder = self.vault_manager.vault_path / self.vault_manager.folders.get(folder_key)
+            if not folder.exists():
+                continue
+
+            for file_path in folder.glob("*.md"):
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                    if "No jobs found at this company." in content or "jobs: []" in content:
+                        logger.info(f"Removing unlinked note from {folder_key}: {file_path.name}")
+                        file_path.unlink()
+                        removed_count += 1
+                except Exception as e:
+                    logger.warning(f"Error pruning {file_path}: {e}")
+
+        logger.info(f"Pruning complete. Removed {removed_count} Orphaned notes.")
+
+    def sync_from_obsidian(self) -> None:
+        """Parses Obsidian job notes to update status and other metadata in the database."""
+        logger.info("Syncing back from Obsidian to database...")
+
+        if not self.extractor.db:
+            logger.error("Database not available for sync-back.")
+            return
+
+        jobs_folder = self.vault_manager.vault_path / self.vault_manager.folders.get("jobs", "Jobs")
+        if not jobs_folder.exists():
+            logger.warning(f"Jobs folder not found at {jobs_folder}")
+            return
+
+        # Status Tag Mapping
+        tag_map = {
+            "#ToApply": "to_apply",
+            "#Applied": "applied",
+            "#Interviewing": "interviewing",
+            "#Rejected": "rejected",
+            "#Offered": "offered",
+            "#Wishlist": "wishlist",
+        }
+
+        updated_count = 0
+        for file_path in jobs_folder.rglob("*.md"):
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                # 1. Extract Job ID
+                id_match = re.search(r"- \*\*Job ID:\*\* (\d+)", content)
+                if not id_match:
+                    continue
+                job_id = id_match.group(1)
+
+                # 2. Extract Status Tag
+                # Look for tags in the "Status:" line or anywhere in the file
+                # But typically we put them in the status line: - **Status:** #ToApply #Specialization
+                status_line_match = re.search(r"- \*\*Status:\*\* (.*)", content)
+                if status_line_match:
+                    line_content = status_line_match.group(1)
+                    found_status = None
+                    for tag, status_val in tag_map.items():
+                        if tag in line_content:
+                            found_status = status_val
+                            break
+
+                    if found_status:
+                        if self.extractor.db.job_exists(job_id):
+                            self.extractor.db.update_job_status(job_id, found_status)
+                            updated_count += 1
+                        else:
+                            logger.warning(
+                                f"Job ID {job_id} found in Obsidian ({file_path.name}) but not in database. Skipping."
+                            )
+
+            except Exception as e:
+                logger.warning(f"Error processing {file_path} for sync-back: {e}")
+
+        logger.info(f"Sync-back complete. Updated {updated_count} jobs.")

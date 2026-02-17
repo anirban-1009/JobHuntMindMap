@@ -62,5 +62,10 @@ class TestAnalysisService:
         }
         mock_db.get_all_analyses.return_value = [mock_analysis_row]
 
-        analysis_service.run_gap_analysis(min_score=80)
-        analysis_service.gap_analyzer.analyze_gaps.assert_called_once()
+        mock_job = MagicMock(spec=JobDetails)
+        mock_job.id = "123"
+        mock_job.specialization = "AI_ML"
+
+        with patch.object(analysis_service.extractor, "get_cached_job", return_value=mock_job):
+            analysis_service.run_gap_analysis(min_score=80)
+            analysis_service.gap_analyzer.analyze_gaps.assert_called_once()

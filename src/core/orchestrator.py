@@ -255,15 +255,30 @@ class MindMapApp:
             print(f"{Fore.RED}Scoring failed: {error}")
             sys.exit(1)
 
-    def analyze_gaps(self, min_score: int) -> None:
+    def analyze_gaps(self, min_score: int, tag: Optional[str] = None) -> None:
         """Identify missing skills across highly-rated job postings."""
-        print(f"{Fore.CYAN}Analyzing gaps across jobs scored >= {min_score}...")
-        report = self.analysis_service.run_gap_analysis(min_score)
+        filter_msg = f" (tag: {tag})" if tag else ""
+        print(f"{Fore.CYAN}Analyzing gaps across jobs scored >= {min_score}{filter_msg}...")
+        report = self.analysis_service.run_gap_analysis(min_score, tag=tag)
         if report:
             print(f"{Fore.GREEN}\n=== Top Missing Skills ===")
             for skill, count in report.skill_frequency.items():
                 print(f"- {skill}: {count} jobs")
             print(f"{Fore.CYAN}\n=== Improvement Plan ===\n{report.improvement_plan}")
+
+            # Also Sync to Obsidian
+            from src.generator.sync_service import SyncService
+
+            sync = SyncService(self.config)
+            content = sync.template_manager.render_gap_analysis(report, min_score, tag)
+            filename = f"Gap Analysis - {tag if tag else 'All'}.md"
+            file_path = sync.vault_manager.write_file(content, filename, "analysis")
+            print(f"{Fore.GREEN}\nGap analysis report saved to Obsidian: {file_path}")
+        else:
+            print(f"{Fore.YELLOW}No jobs found with a score of {min_score} or higher{filter_msg}.")
+            print(
+                f"{Fore.WHITE}Try running '{Fore.CYAN}uv run mindmap score --all{Fore.WHITE}' first, or lowering the threshold."
+            )
 
     def notify(self, min_score: int) -> None:
         """Send job digest emails for jobs meeting the score threshold."""
@@ -292,6 +307,12 @@ class MindMapApp:
         print(f"{Fore.CYAN}Syncing to Obsidian...")
         SyncService(self.config).sync()
         print(f"{Fore.GREEN}Sync complete.")
+
+    def sync_back(self) -> None:
+        """Sync status and changes from Obsidian back to the database."""
+        print(f"{Fore.CYAN}Syncing back from Obsidian...")
+        SyncService(self.config).sync_from_obsidian()
+        print(f"{Fore.GREEN}Sync-back complete.")
 
     def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 190) -> Optional[Dict[str, str]]:
         """Generate personalized referral message for a job and contact."""

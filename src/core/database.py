@@ -48,6 +48,7 @@ class DatabaseManager:
             raw_data TEXT,
             relevance_score INTEGER,
             analysis_data TEXT,
+            specialization TEXT DEFAULT 'General',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'new'
@@ -111,12 +112,12 @@ class DatabaseManager:
             id, title, company, location, description, posted_date,
             seniority_level, employment_type, job_function, industries,
             link, salary, apply_link, raw_data, status,
-            relevance_score, analysis_data
+            relevance_score, analysis_data, specialization
         ) VALUES (
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
-            ?, ?
+            ?, ?, ?
         )
         ON CONFLICT(id) DO UPDATE SET
             title=excluded.title,
@@ -134,6 +135,7 @@ class DatabaseManager:
             raw_data=excluded.raw_data,
             relevance_score=COALESCE(excluded.relevance_score, jobs.relevance_score),
             analysis_data=COALESCE(excluded.analysis_data, jobs.analysis_data),
+            specialization=excluded.specialization,
             updated_at=CURRENT_TIMESTAMP
         """
 
@@ -163,6 +165,7 @@ class DatabaseManager:
             job_data.get("status", "new"),
             job_data.get("relevance_score"),
             job_data.get("analysis_data"),
+            job_data.get("specialization", "General"),
         )
 
         try:
@@ -244,6 +247,18 @@ class DatabaseManager:
                 logger.info(f"Saved analysis for job {job_id}.")
         except Exception as e:
             logger.error(f"Failed to save analysis for job {job_id}: {e}")
+            raise
+
+    def update_job_status(self, job_id: str, status: str):
+        """Updates the status of a job."""
+        query = "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        try:
+            with self._get_connection() as conn:
+                conn.execute(query, (status, job_id))
+                conn.commit()
+                logger.info(f"Updated status for job {job_id} to {status}.")
+        except Exception as e:
+            logger.error(f"Failed to update status for job {job_id}: {e}")
             raise
 
     def get_all_analyses(self, min_score: int = 0) -> List[Dict[str, Any]]:

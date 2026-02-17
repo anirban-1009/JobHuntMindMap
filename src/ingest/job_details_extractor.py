@@ -46,6 +46,64 @@ class JobDetails:
     apply_link: str = ""
     created_at: Optional[str] = None
     raw_data: Optional[Dict[str, Any]] = None
+    specialization: str = "General"
+
+    def determine_specialization(self) -> str:
+        """Categorize job into typical tech specializations based on title."""
+        title_lower = self.title.lower()
+
+        if any(
+            x in title_lower
+            for x in [
+                "machine learning",
+                "ml",
+                "ai ",
+                "artificial intelligence",
+                "nlp",
+                "computer vision",
+                "generative ai",
+                "llm",
+                "deep learning",
+                "transformers",
+                "pytorch",
+                "tensorflow",
+                "neural",
+            ]
+        ):
+            return "AI_ML"
+        if any(x in title_lower for x in ["data scientist", "data analyst", "data engineer", "big data", "analytics"]):
+            return "Data_Science"
+        if any(x in title_lower for x in ["python", "django", "flask", "fastapi", "numpy", "pandas"]):
+            return "Python_Dev"
+        if any(
+            x in title_lower
+            for x in ["backend", "back-end", "server", "distributed systems", "api engineer", "platform engineer"]
+        ):
+            return "Backend"
+        if any(
+            x in title_lower
+            for x in [
+                "frontend",
+                "front-end",
+                "react",
+                "vue",
+                "angular",
+                "javascript",
+                "typescript",
+                "ui/ux",
+                "web developer",
+            ]
+        ):
+            return "Frontend"
+        if any(
+            x in title_lower
+            for x in ["devops", "sre", "cloud", "aws", "azure", "gcp", "infrastructure", "kubernetes", "docker"]
+        ):
+            return "DevOps_Cloud"
+        if any(x in title_lower for x in ["full stack", "fullstack"]):
+            return "FullStack"
+
+        return "General"
 
 
 class JobDetailsExtractor:
@@ -253,6 +311,7 @@ class JobDetailsExtractor:
                 salary=salary,
                 apply_link=apply_link,
             )
+            job_details.specialization = job_details.determine_specialization()
 
             # Refine with LLM if available and extraction seems messy or incomplete
             if self.llm and (
@@ -311,6 +370,7 @@ class JobDetailsExtractor:
                 job.salary = extracted.get("salary") or job.salary
                 job.seniority_level = extracted.get("seniority") or job.seniority_level
                 job.employment_type = extracted.get("employment_type") or job.employment_type
+                job.specialization = job.determine_specialization()
         except Exception as e:
             logger.warning(f"LLM extraction fallback failed for job {job.id}: {e}")
 

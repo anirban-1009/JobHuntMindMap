@@ -71,11 +71,12 @@ def score(config, score_all, job_id):
 
 
 @cli.command()
-@click.option("--config", default="config.yaml")
-@click.option("--min-score", default=0)
-def analyze_gaps(config, min_score):
-    """Analyze skill gaps."""
-    MindMapApp(config).analyze_gaps(min_score)
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--min-score", default=0, type=int, help="Minimum score to include")
+@click.option("--tag", default=None, help="Specific tag/specialization to analyze (e.g. AI_ML)")
+def analyze_gaps(config, min_score, tag):
+    """Analyze skill gaps and generate report."""
+    MindMapApp(config).analyze_gaps(min_score, tag)
 
 
 @cli.command()
@@ -147,6 +148,13 @@ def network_all(config):
 def sync(config):
     """Sync data to Obsidian."""
     MindMapApp(config).sync()
+
+
+@cli.command()
+@click.option("--config", default="config.yaml")
+def sync_back(config):
+    """Sync changes from Obsidian back to the database."""
+    MindMapApp(config).sync_back()
 
 
 @cli.command()

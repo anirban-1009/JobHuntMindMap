@@ -1,5 +1,5 @@
 import pathlib
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from jinja2 import Environment, FileSystemLoader
 
@@ -109,3 +109,25 @@ class TemplateManager:
         jobs = jobs or []
         template = self.env.get_template("Person.md.j2")
         return template.render(person=person, jobs=jobs)
+
+    def render_gap_analysis(self, report: Any, min_score: int, tag: Optional[str] = None) -> str:
+        """
+        Renders the GapAnalysis.md template.
+
+        Args:
+            report: GapAnalysisResult object.
+            min_score: Minimum score used for analysis.
+            tag: Optional tag filter used.
+
+        Returns:
+            Rendered Markdown string.
+        """
+        import datetime
+
+        template = self.env.get_template("GapAnalysis.md.j2")
+        return template.render(
+            report=report,
+            min_score=min_score,
+            tag=tag,
+            generated_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        )

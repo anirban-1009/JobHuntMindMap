@@ -68,6 +68,13 @@ The "Mind Map Generator." This command exports your database (Jobs, Companies, A
 uv run mindmap sync
 ```
 
+### `sync-back`
+Synchronizes changes made in Obsidian (like `#Status` tag updates) back to the local database. This allows you to manage your application pipeline directly from Obsidian.
+
+```bash
+uv run mindmap sync-back
+```
+
 ---
 
 ## Networking & Referrals
@@ -102,11 +109,16 @@ uv run mindmap refer <JOB_ID> [OPTIONS]
 ## Utilities & Analysis
 
 ### `analyze-gaps`
-Identifies common missing skills across high-scoring jobs. Helps you understand what to learn next or add to your resume.
+Identifies common missing skills across high-scoring jobs. Helps you understand what to learn next or add to your resume. It also generates a detailed Markdown report with a gap table in your Obsidian vault's `Analysis/` folder.
 
 ```bash
-uv run mindmap analyze-gaps [--min-score <int>]
+uv run mindmap analyze-gaps [--min-score <int>] [--tag <text>]
 ```
+**Options:**
+- `--min-score <int>`: Minimum relevance score to include in analysis (default: 0).
+- `--tag <text>`: Filter analysis by a specific job specialization (e.g., `AI_ML`, `Backend`, `Python_Dev`).
+
+*Output Example:* A table summarizing gaps for each job and an AI-generated improvement plan is saved as `Analysis/Gap Analysis - <Tag>.md`.
 
 ### `tailor`
 Generates a job-optimized LaTeX resume PDF based on your master resume and the specific job description.

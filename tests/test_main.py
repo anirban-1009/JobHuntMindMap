@@ -28,6 +28,13 @@ def mock_config(tmp_path: pathlib.Path) -> str:
       api_key: "123"
     user:
       linkedin_connections_path: "data/Connections.csv"
+    obsidian:
+      vault_path: "vault"
+      folders:
+        jobs: "Jobs"
+        companies: "Companies"
+        people: "People"
+        analysis: "Analysis"
     """
     config_path.write_text(config_content)
     return str(config_path)
@@ -230,7 +237,9 @@ class TestMainCLI:
         """Verify the 'analyze-gaps' command identifies missing skills across jobs."""
         with runner.isolated_filesystem():
             conf = pathlib.Path("conf.yaml")
-            conf.write_text("ai: {}")
+            conf.write_text(
+                "ai: {}\nobsidian:\n  vault_path: .\n  folders:\n    jobs: Jobs\n    companies: Companies\n    people: People\n    analysis: Analysis"
+            )
 
             cache_dir = pathlib.Path("data/job_cache")
             cache_dir.mkdir(parents=True)
