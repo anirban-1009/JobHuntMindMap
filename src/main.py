@@ -71,11 +71,12 @@ def score(config, score_all, job_id):
 
 
 @cli.command()
-@click.option("--config", default="config.yaml")
-@click.option("--min-score", default=0)
-def analyze_gaps(config, min_score):
-    """Analyze skill gaps."""
-    MindMapApp(config).analyze_gaps(min_score)
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--min-score", default=0, type=int, help="Minimum score to include")
+@click.option("--tag", default=None, help="Specific tag/specialization to analyze (e.g. AI_ML)")
+def analyze_gaps(config, min_score, tag):
+    """Analyze skill gaps and generate report."""
+    MindMapApp(config).analyze_gaps(min_score, tag)
 
 
 @cli.command()
@@ -90,7 +91,7 @@ def notify(config, min_score):
 @click.option("--config", default="config.yaml")
 @click.argument("job_id")
 @click.option("--name", default=None)
-@click.option("--max-chars", default=190, type=int, help="Maximum characters for the message")
+@click.option("--max-chars", default=300, type=int, help="Maximum characters for the message")
 def refer(config, job_id, name, max_chars):
     """Generate referral request for a job."""
     app = MindMapApp(config)
@@ -98,7 +99,7 @@ def refer(config, job_id, name, max_chars):
 
     if res is None:
         name = click.prompt(Fore.CYAN + "Enter connection name manually", default="Hiring Manager")
-        res = app.referral(job_id, name)
+        res = app.referral(job_id, name, max_chars=max_chars)
 
     if res:
         click.echo(Fore.WHITE + "\n" + "=" * 50)
@@ -147,6 +148,13 @@ def network_all(config):
 def sync(config):
     """Sync data to Obsidian."""
     MindMapApp(config).sync()
+
+
+@cli.command()
+@click.option("--config", default="config.yaml")
+def sync_back(config):
+    """Sync changes from Obsidian back to the database."""
+    MindMapApp(config).sync_back()
 
 
 @cli.command()

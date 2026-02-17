@@ -46,8 +46,16 @@ def mock_config(tmp_path: pathlib.Path) -> pathlib.Path:
     config_data = {
         "search": {"keywords": ["Python"], "location": "Remote", "location_type": "Remote", "filters": {}},
         "ai": {"provider": "ollama", "ollama": {"model_name": "llama3"}},
-        "user": {"resume_path": "data/resume.pdf", "email": "user@example.com"},
+        "user": {
+            "resume_path": "data/resume.pdf",
+            "email": "user@example.com",
+            "linkedin_connections_path": "data/Connections.csv",
+        },
         "notifications": {"email": {"enabled": True}},
+        "obsidian": {
+            "vault_path": str(tmp_path / "vault"),
+            "folders": {"jobs": "Jobs", "companies": "Companies", "people": "People", "analysis": "Analysis"},
+        },
     }
     config_file = tmp_path / "test_config.yaml"
     with open(config_file, "w") as f:
@@ -95,12 +103,14 @@ class TestCLIValidation:
 class TestCLIJobIngestion:
     """Tests for job discovery, scraping, and session management."""
 
+    @patch("src.core.orchestrator.JobDetailsExtractor")
     @patch("src.core.orchestrator.BrowserManager")
     @patch("src.core.orchestrator.JobSearcher")
     def test_search_command(
         self,
         mock_searcher_class: MagicMock,
         mock_browser_manager_class: MagicMock,
+        mock_extractor_class: MagicMock,
         runner: CliRunner,
         mock_config: pathlib.Path,
     ) -> None:

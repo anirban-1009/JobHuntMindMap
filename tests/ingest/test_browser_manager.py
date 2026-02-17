@@ -27,9 +27,20 @@ class TestBrowserManager:
         # Verify
         mock_playwright_sync.return_value.start.assert_called_once()
         mock_playwright_instance.chromium.launch.assert_called_with(
-            headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"]
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-blink-features=AutomationControlled",
+            ],
+            ignore_default_args=["--enable-automation"],
         )
         mock_browser.new_context.assert_called_once()
+        # Verify context options like user_agent
+        call_args = mock_browser.new_context.call_args[1]
+        assert "user_agent" in call_args
+        assert call_args["viewport"] == {"width": 1280, "height": 720}
+
         mock_context.new_page.assert_called_once()
         assert manager.page is not None
 
@@ -49,7 +60,9 @@ class TestBrowserManager:
         manager = BrowserManager(session_path=session_file)
         manager.start()
 
-        mock_browser.new_context.assert_called_with(storage_state=str(session_file))
+        # Verify storage_state is passed
+        call_args = mock_browser.new_context.call_args[1]
+        assert call_args["storage_state"] == str(session_file)
 
     @patch("src.ingest.browser_manager.sync_playwright")
     def test_stop_saves_session(self, mock_playwright_sync, tmp_path):
@@ -61,6 +74,9 @@ class TestBrowserManager:
         mock_playwright_instance.chromium.launch.return_value = mock_browser
         mock_context = MagicMock()
         mock_browser.new_context.return_value = mock_context
+        mock_page = MagicMock()
+        mock_context.new_page.return_value = mock_page
+        mock_page.url = "https://www.linkedin.com/feed/"  # Non-login URL
 
         session_file = tmp_path / "session.json"
 
@@ -156,6 +172,33 @@ class TestBrowserManager:
         with patch.object(manager, "start"), patch.object(manager, "goto"), patch.object(manager, "page", mock_page):
             with pytest.raises(ScraperError, match="Login timeout"):
                 manager.login_manual()
+
+    @patch("src.ingest.browser_manager.sync_playwright")
+    def test_stop_skips_save_on_login_page(self, mock_playwright_sync, tmp_path):
+        """Test that stop() skips saving state if on a login page."""
+        # Setup mocks
+        mock_playwright_instance = MagicMock()
+        mock_playwright_sync.return_value.start.return_value = mock_playwright_instance
+        mock_browser = MagicMock()
+        mock_playwright_instance.chromium.launch.return_value = mock_browser
+        mock_context = MagicMock()
+        mock_browser.new_context.return_value = mock_context
+        mock_page = MagicMock()
+        mock_context.new_page.return_value = mock_page
+
+        # Mock being on a login page
+        mock_page.url = "https://www.linkedin.com/login"
+
+        session_file = tmp_path / "session.json"
+
+        manager = BrowserManager(session_path=session_file)
+        manager.start()
+        manager.stop()
+
+        # storage_state should NOT have been called
+        mock_context.storage_state.assert_not_called()
+        mock_context.close.assert_called()
+        mock_browser.close.assert_called()
 
     def test_stop_no_errors(self):
         """Test stop handles component teardown safely."""

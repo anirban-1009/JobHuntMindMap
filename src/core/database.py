@@ -48,6 +48,7 @@ class DatabaseManager:
             raw_data TEXT,
             relevance_score INTEGER,
             analysis_data TEXT,
+            specialization TEXT DEFAULT 'General',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'new'
@@ -111,12 +112,12 @@ class DatabaseManager:
             id, title, company, location, description, posted_date,
             seniority_level, employment_type, job_function, industries,
             link, salary, apply_link, raw_data, status,
-            relevance_score, analysis_data
+            relevance_score, analysis_data, specialization
         ) VALUES (
             ?, ?, ?, ?, ?, ?,
             ?, ?, ?, ?,
             ?, ?, ?, ?, ?,
-            ?, ?
+            ?, ?, ?
         )
         ON CONFLICT(id) DO UPDATE SET
             title=excluded.title,
@@ -132,8 +133,13 @@ class DatabaseManager:
             salary=excluded.salary,
             apply_link=excluded.apply_link,
             raw_data=excluded.raw_data,
-            relevance_score=COALESCE(excluded.relevance_score, jobs.relevance_score),
+        status=CASE 
+            WHEN jobs.status = 'discovered' THEN excluded.status 
+            ELSE jobs.status 
+        END,
+        relevance_score=COALESCE(excluded.relevance_score, jobs.relevance_score),
             analysis_data=COALESCE(excluded.analysis_data, jobs.analysis_data),
+            specialization=excluded.specialization,
             updated_at=CURRENT_TIMESTAMP
         """
 
@@ -163,6 +169,7 @@ class DatabaseManager:
             job_data.get("status", "new"),
             job_data.get("relevance_score"),
             job_data.get("analysis_data"),
+            job_data.get("specialization", "General"),
         )
 
         try:
@@ -196,6 +203,17 @@ class DatabaseManager:
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to get jobs: {e}")
+            return []
+
+    def get_jobs_by_status(self, status: str) -> List[Dict[str, Any]]:
+        """Retrieves jobs filtered by status."""
+        query = "SELECT * FROM jobs WHERE status = ?"
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(query, (status,))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get jobs by status {status}: {e}")
             return []
 
     def job_exists(self, job_id: str) -> bool:
@@ -234,6 +252,17 @@ class DatabaseManager:
             logger.error(f"Failed to get requests for job {job_id}: {e}")
             return []
 
+    def get_all_requests(self) -> List[Dict[str, Any]]:
+        """Retrieves all referral requests."""
+        query = "SELECT * FROM requests"
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(query)
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get all requests: {e}")
+            return []
+
     def save_analysis(self, job_id: str, score: int, analysis_data: str):
         """Updates a job with analysis results."""
         query = "UPDATE jobs SET relevance_score = ?, analysis_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
@@ -244,6 +273,18 @@ class DatabaseManager:
                 logger.info(f"Saved analysis for job {job_id}.")
         except Exception as e:
             logger.error(f"Failed to save analysis for job {job_id}: {e}")
+            raise
+
+    def update_job_status(self, job_id: str, status: str):
+        """Updates the status of a job."""
+        query = "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        try:
+            with self._get_connection() as conn:
+                conn.execute(query, (status, job_id))
+                conn.commit()
+                logger.info(f"Updated status for job {job_id} to {status}.")
+        except Exception as e:
+            logger.error(f"Failed to update status for job {job_id}: {e}")
             raise
 
     def get_all_analyses(self, min_score: int = 0) -> List[Dict[str, Any]]:

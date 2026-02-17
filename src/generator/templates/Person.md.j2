@@ -18,5 +18,16 @@
 - No jobs found at this company.
 {% endfor %}
 
+## Referral Messages
+{% for req in referrals %}
+### Job: {{ req.job_id }} ({{ req.created_at }})
+- **Status:** {{ req.status }}
+- **Message:**
+> {{ req.message_content }}
+
+{% else %}
+- No referral messages sent to this person yet.
+{% endfor %}
+
 ## Notes
 {{ person.metadata.notes or '' }}

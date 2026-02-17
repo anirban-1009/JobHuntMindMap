@@ -4,9 +4,20 @@ from typing import Dict, List, Optional
 
 from src.core.ai import LLMClient
 from src.core.relevance_scorer import ScoringResult
+from src.ingest.job_details_extractor import JobDetails
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class JobGapDetail:
+    """Detailed missing skills for a specific job."""
+
+    job_id: str
+    title: str
+    company: str
+    missing_skills: List[str]
 
 
 @dataclass
@@ -16,6 +27,7 @@ class GapAnalysisResult:
     top_missing_skills: List[str]
     skill_frequency: Dict[str, int]
     improvement_plan: str
+    details: List[JobGapDetail]
 
 
 class GapAnalyzer:
@@ -24,28 +36,33 @@ class GapAnalyzer:
     def __init__(self, llm_client: LLMClient):
         self.llm = llm_client
 
-    def analyze_gaps(self, scoring_results: List[ScoringResult], top_n: int = 5) -> Optional[GapAnalysisResult]:
+    def analyze_gaps(
+        self, job_results: List[tuple[JobDetails, ScoringResult]], top_n: int = 5
+    ) -> Optional[GapAnalysisResult]:
         """
-        Aggregates missing skills from a list of scoring results and generates an improvement plan.
+        Aggregates missing skills from a list of (job, result) tuples and generates an improvement plan.
 
         Args:
-            scoring_results: List of ScoringResult objects from RelevanceScorer.
+            job_results: List of (JobDetails, ScoringResult) tuples.
             top_n: Number of top missing skills to focus on.
 
         Returns:
-            GapAnalysisResult containing aggregated data and advice, or None if analysis fails.
+            GapAnalysisResult containing aggregated data, details, and advice.
         """
-        if not scoring_results:
-            logger.warning("No scoring results provided for gap analysis.")
+        if not job_results:
+            logger.warning("No results provided for gap analysis.")
             return None
 
-        # 1. Aggregate missing skills
+        # 1. Aggregate missing skills and collect details
         all_missing_skills = []
-        for res in scoring_results:
-            # We can optionally weight this by job score, but frequency is a good start.
-            # Normalization (lowercase, strip) is done here to avoid "Python" vs "python".
-            normalized_skills = [s.strip().lower() for s in res.missing_skills]
-            all_missing_skills.extend(normalized_skills)
+        details = []
+        for job, res in job_results:
+            normalized_skills = [s.strip() for s in res.missing_skills]
+            all_missing_skills.extend([s.lower() for s in normalized_skills])
+
+            details.append(
+                JobGapDetail(job_id=job.id, title=job.title, company=job.company, missing_skills=normalized_skills)
+            )
 
         if not all_missing_skills:
             logger.info("No missing skills found in the provided results.")
@@ -53,6 +70,7 @@ class GapAnalyzer:
                 top_missing_skills=[],
                 skill_frequency={},
                 improvement_plan="No major gaps identified! You are a strong candidate.",
+                details=details,
             )
 
         # 2. Calculate Frequency
@@ -64,7 +82,9 @@ class GapAnalyzer:
         # 3. Generate Improvement Plan via LLM
         plan = self._generate_improvement_plan(top_skills)
 
-        return GapAnalysisResult(top_missing_skills=top_skills, skill_frequency=frequency_dict, improvement_plan=plan)
+        return GapAnalysisResult(
+            top_missing_skills=top_skills, skill_frequency=frequency_dict, improvement_plan=plan, details=details
+        )
 
     def _generate_improvement_plan(self, missing_skills: List[str]) -> str:
         """Uses LLM to suggest how to close the identified skill gaps."""

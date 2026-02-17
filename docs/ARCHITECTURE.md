@@ -5,6 +5,62 @@ The architecture is designed as a standalone Python application that interacts w
 
 ## Components & Data Flow
 
+```mermaid
+graph TD
+    %% Configuration & Inputs
+    subgraph Inputs
+        Config[config.yaml]
+        Resume[Resume PDF]
+        ConnCSV[Connections CSV]
+    end
+
+    %% Ingestion Layer
+    subgraph Ingestion [Ingestion Layer]
+        Search[Job Searcher]
+        Scrape[Detail Extractor]
+        Network[Network Builder]
+    end
+
+    %% Processing Layer
+    subgraph Core [Core Logic]
+        Scorer[AI Relevance Scorer]
+        Referral[Referral Service]
+        Tailor[Resume Tailorer]
+    end
+
+    %% Storage
+    subgraph Storage [Storage Layer]
+        DB[(SQLite jobs.db)]
+        Cache[Job Cache / JSON]
+    end
+
+    %% Output
+    subgraph Output [Generation Layer]
+        Sync[Sync Service]
+        Vault[Obsidian Vault]
+        Digest[Email Digest]
+    end
+
+    %% Connections
+    Config --> Search
+    Config --> Network
+    Resume --> Scorer
+    Resume --> Tailor
+    ConnCSV --> Network
+
+    Search --> DB
+    Scrape --> DB
+    Scrape --> Scorer
+    
+    Scorer --> DB
+    Network --> Referral
+    Referral --> DB
+    
+    DB --> Sync
+    Sync --> Vault
+    DB --> Digest
+```
+
 ### 1. Data Ingestion Layer (`src/ingest`)
 Responsible for fetching data from external sources.
 - **Job Seeker Profile**: Parses user's resume (PDF/Text) or LinkedIn profile to extract skills and experience.
@@ -20,7 +76,7 @@ Processes raw data and applies business logic.
 - **Network Graph Builder**: Maps connections to companies with open roles.
   - Identifies "high leverage" connections (people with hiring influence or in relevant departments).
 
-### 4. Generation Layer (`src/generator`)
+### 3. Generation Layer (`src/generator`)
 Produces the final output artifacts.
 - **Obsidian Builder**: Creates Markdown notes and Canvas files.
 - **Resume Engine**: 
@@ -28,14 +84,15 @@ Produces the final output artifacts.
   - Uses AI (Gemini) to inject tailored content for a specific job.
   - Compiles to PDF using a local LaTeX installation (`pdflatex` or `tectonic`).
 
-### 5. Notification Layer (`src/notification`)    
+### 4. Notification Layer (`src/notification`)    
 Responsible for alerting the user of new opportunities.
 - **Email Service**: Formats and sends HTML/Text emails using standard Python `smtplib`.
 - **Digest Generator**: Compiles daily summaries of high-priority jobs.
 
 ### 5. Storage Layer (Local Filesystem)
-The "database" is simply the structured folder of Markdown files.
-- **State Preservation**: The tool reads existing files before overwriting to preserve user notes/statuses.
+The system uses a two-tier storage approach:
+- **Relational Data**: A local `SQLite` database (`data/jobs.db`) tracks job statuses (`discovered`, `new`, `scored`), analysis results, and referral requests.
+- **Knowledge Base**: The structured Obsidian Vault serves as the human-readable frontend, where each job, company, and person gets a dedicated Markdown note.
 
 ## Detailed Workflow
 
@@ -50,11 +107,13 @@ The "database" is simply the structured folder of Markdown files.
     - Create/Update `Jobs/{JobID}.md`
     - Create/Update `Companies/{Company}.md`
     - Create/Update `People/{Person}.md`
-    - generate `Dashboard.canvas` showing high-priority jobs and connections.
+    - Generate `Dashboard.canvas` showing high-priority jobs and connections.
+
 
 ## Tech Stack
 - **Language**: Python 3.13+
-- **Data Scraping**: `playwright` or `selenium` (for LinkedIn interaction)
-- **Data Processing**: `pandas` (for CSV export handling), `spacy` or `nltk` (for keyword extraction/matching)
+- **Data Ingestion**: `playwright` (for stealthy LinkedIn interaction)
+- **Database**: `SQLite` (persistent state and discovery cache)
+- **AI Processing**: Gemini / LLM (for scoring, tailoring, and message generation)
 - **Templating**: `jinja2`
-- **Output Format**: Markdown, Obsidian Canvas JSON
+- **Output**: Markdown, Obsidian Canvas

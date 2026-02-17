@@ -37,48 +37,69 @@ class ReferralService:
         return builder.find_matches(job)
 
     def generate_message(
-        self, job: JobDetails, connection: Any, resume_data: Dict[str, Any], max_chars: int = 190
+        self, job: JobDetails, connection: Any, resume_data: Dict[str, Any], max_chars: int = 250
     ) -> str:
         """
         Generates a personalized referral request message.
 
         The message is limited to the specified max_chars to fit within
         the target platform's (e.g. LinkedIn) constraints.
+        Enriches the message with experience details and ensures diversity.
         """
-        # Format skills nicely
+        # 1. Format skills nicely
         skills_str = "None identified"
         if isinstance(resume_data.get("skills"), dict):
             all_skills = []
             for cat, items in resume_data["skills"].items():
                 if isinstance(items, list):
                     all_skills.extend(items)
-            skills_str = ", ".join(all_skills[:10])
+            skills_str = ", ".join(all_skills[:8])
+
+        # 2. Extract Experience info
+        experience_list = resume_data.get("experience", [])
+        total_exp_years = resume_data.get("total_experience_years", len(experience_list) * 2)
+        current_role = resume_data.get("job_title", "Software Engineer")
+
+        if experience_list and not resume_data.get("job_title"):
+            current_role = experience_list[0].get("title", current_role)
 
         connection_name = getattr(connection, "full_name", "Professional")
         first_name = connection_name.split()[0] if " " in connection_name else connection_name
         candidate_first_name = resume_data.get("first_name", "Anirban")
+        candidate_full_name = f"{candidate_first_name} {resume_data.get('last_name', 'Sikdar')}"
 
         prompt = f"""
-        Generate a short, natural, and polite message to ask for a referral.
-        Target Job: {job.title} at {job.company}
-        Target Person: {connection_name}
+        Generate a highly personalized, natural, and polite LinkedIn message to ask for a job referral.
         
-        Candidate: {candidate_first_name} {resume_data.get("last_name", "Sikdar")}
-        Top Skill: {skills_str.split(",")[0] if skills_str != "None identified" else "technical background"}
+        CONTEXT:
+        - Target: {job.title} at {job.company}
+        - To: {connection_name}
+        - From: {candidate_full_name}
+        - Current Role: {current_role}
+        - Total Experience: ~{total_exp_years}+ years
+        - Key Skills: {skills_str}
 
-        Guidelines:
-        - CRITICAL: Total length MUST be under {max_chars} characters (including spaces).
-        - Purpose: This will be used as a professional outreach message.
-        - Tone: Warm, human, and professional (not robotic).
-        - Flow: "Hi {first_name}, I'm {candidate_first_name}..." or similar natural opening.
-        - Content: Briefly mention interest in {job.title} and ask if they'd be open to referring you.
-        - NO subject lines, NO placeholders.
+        CRITICAL GUIDELINES:
+        1. LENGTH: Must be under {max_chars} characters.
+        2. NO ROBOTIC TEMPLATES: Avoid "I am writing to express interest". Use natural spoken English.
+        3. DIVERSITY: Be creative. You can start with a shared company (if they are at the target company), a compliment on their work/profile, or a direct but warm approach.
+        4. EXPERIENCE: Briefly mention {total_exp_years}+ years of experience or the current role {current_role} if it adds value.
+        5. CALL TO ACTION: Ask if they'd be open to sharing my profile/referring me, or if they have advice for the {job.title} role.
+        6. NO placeholders [like this], NO subject lines.
+
+        Example Styles (Pick one or mix):
+        - Style A: Hi {first_name}, I'm {candidate_first_name}. I've been following {job.company}'s work in tech...
+        - Style B: Hey {first_name}, hope you're doing well! I'm a {current_role} with {total_exp_years}y exp, interested in the {job.title} opening...
+        - Style C: Hi {first_name}, I saw you're at {job.company}. I'm applying for the {job.title} role and was wondering if you'd be open to a quick chat or referral?
         """
         message = self.llm.generate(prompt).strip()
 
+        # Clean up any quotes the LLM might include
+        message = message.strip('"').strip("'")
+
         if len(message) > max_chars:
             logger.warning(
-                f"Generated message exceeds {max_chars} chars ({len(message)}). Truncating or re-trying might be needed."
+                f"Generated message exceeds {max_chars} chars ({len(message)}). Keeping full message as requested."
             )
 
         return message

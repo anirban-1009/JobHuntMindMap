@@ -6,7 +6,18 @@ import pytest
 from click.testing import CliRunner
 
 from src.core.relevance_scorer import ScoringResult
-from src.main import analyze_gaps, check, cli, login, network, score, scrape, search, test_ai
+from src.main import (
+    analyze_gaps,
+    check,
+    cli,
+    login,
+    network,
+    refer,
+    score,
+    scrape,
+    search,
+    test_ai,
+)
 
 
 @pytest.fixture
@@ -28,6 +39,13 @@ def mock_config(tmp_path: pathlib.Path) -> str:
       api_key: "123"
     user:
       linkedin_connections_path: "data/Connections.csv"
+    obsidian:
+      vault_path: "vault"
+      folders:
+        jobs: "Jobs"
+        companies: "Companies"
+        people: "People"
+        analysis: "Analysis"
     """
     config_path.write_text(config_content)
     return str(config_path)
@@ -74,13 +92,19 @@ class TestMainCLI:
         mock_browser.login_manual.assert_called_once()
         assert "Starting browser" in result.output
 
+    @patch("src.core.orchestrator.JobDetailsExtractor")
     @patch("src.core.orchestrator.BrowserManager")
     @patch("src.core.orchestrator.JobSearcher")
     def test_search_command(
-        self, mock_searcher_cls: MagicMock, mock_browser_cls: MagicMock, runner: CliRunner, mock_config: str
+        self,
+        mock_searcher_class: MagicMock,
+        mock_browser_manager_class: MagicMock,
+        mock_extractor_class: MagicMock,
+        runner: CliRunner,
+        mock_config: pathlib.Path,
     ) -> None:
         """Verify the 'search' command executes job discovery logic."""
-        mock_searcher = mock_searcher_cls.return_value
+        mock_searcher = mock_searcher_class.return_value
         mock_result = MagicMock()
         mock_result.title = "Test Job"
         mock_result.id = "123"
@@ -230,7 +254,9 @@ class TestMainCLI:
         """Verify the 'analyze-gaps' command identifies missing skills across jobs."""
         with runner.isolated_filesystem():
             conf = pathlib.Path("conf.yaml")
-            conf.write_text("ai: {}")
+            conf.write_text(
+                "ai: {}\nobsidian:\n  vault_path: .\n  folders:\n    jobs: Jobs\n    companies: Companies\n    people: People\n    analysis: Analysis"
+            )
 
             cache_dir = pathlib.Path("data/job_cache")
             cache_dir.mkdir(parents=True)
@@ -249,3 +275,21 @@ class TestMainCLI:
             assert result.exit_code == 0
             assert "=== Top Missing Skills ===" in result.output
             assert "Learn Python" in result.output
+
+    @patch("src.main.MindMapApp")
+    def test_refer_command(
+        self,
+        mock_app_cls: MagicMock,
+        runner: CliRunner,
+        mock_config: str,
+    ) -> None:
+        """Verify the 'refer' command generates a referral message."""
+        mock_app = mock_app_cls.return_value
+        mock_app.referral.return_value = {"to": "Alice Smith", "message": "Hi Alice, please refer me."}
+
+        result = runner.invoke(refer, ["123", "--config", mock_config, "--name", "Alice"])
+
+        assert result.exit_code == 0
+        assert "To: Alice Smith" in result.output
+        assert "Hi Alice, please refer me." in result.output
+        mock_app.referral.assert_called_once_with("123", "Alice", max_chars=300)

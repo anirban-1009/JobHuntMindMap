@@ -22,43 +22,120 @@ class TestSyncService:
         ):
             return SyncService(mock_config)
 
-    def test_determine_specialization_ai_ml(self, sync_service):
-        job = MagicMock(spec=JobDetails)
-        job.title = "Senior Machine Learning Engineer (AI/NLP)"
-        assert sync_service._determine_specialization(job) == "AI_ML"
+    def test_determine_specialization_ai_ml(self):
+        job = JobDetails(
+            id="1",
+            title="Senior Machine Learning Engineer (AI/NLP)",
+            company="A",
+            location="B",
+            description="C",
+            posted_date="D",
+            seniority_level="E",
+            employment_type="F",
+            job_function="G",
+            industries="H",
+            link="I",
+        )
+        assert job.determine_specialization() == "AI_ML"
 
         job.title = "LLM Researcher"
-        assert sync_service._determine_specialization(job) == "AI_ML"
+        assert job.determine_specialization() == "AI_ML"
 
-    def test_determine_specialization_python(self, sync_service):
-        job = MagicMock(spec=JobDetails)
-        job.title = "Django Backend Developer"
-        assert sync_service._determine_specialization(job) == "Python_Dev"
+    def test_determine_specialization_python(self):
+        job = JobDetails(
+            id="1",
+            title="Django Backend Developer",
+            company="A",
+            location="B",
+            description="C",
+            posted_date="D",
+            seniority_level="E",
+            employment_type="F",
+            job_function="G",
+            industries="H",
+            link="I",
+        )
+        assert job.determine_specialization() == "Python_Dev"
 
-    def test_determine_specialization_backend(self, sync_service):
-        job = MagicMock(spec=JobDetails)
-        job.title = "Platform Engineer (API)"
-        assert sync_service._determine_specialization(job) == "Backend"
+    def test_determine_specialization_backend(self):
+        job = JobDetails(
+            id="1",
+            title="Platform Engineer (API)",
+            company="A",
+            location="B",
+            description="C",
+            posted_date="D",
+            seniority_level="E",
+            employment_type="F",
+            job_function="G",
+            industries="H",
+            link="I",
+        )
+        assert job.determine_specialization() == "Backend"
 
-    def test_determine_specialization_frontend(self, sync_service):
-        job = MagicMock(spec=JobDetails)
-        job.title = "React Web Developer"
-        assert sync_service._determine_specialization(job) == "Frontend"
+    def test_determine_specialization_frontend(self):
+        job = JobDetails(
+            id="1",
+            title="React Web Developer",
+            company="A",
+            location="B",
+            description="C",
+            posted_date="D",
+            seniority_level="E",
+            employment_type="F",
+            job_function="G",
+            industries="H",
+            link="I",
+        )
+        assert job.determine_specialization() == "Frontend"
 
-    def test_determine_specialization_devops(self, sync_service):
-        job = MagicMock(spec=JobDetails)
-        job.title = "Kubernetes Infrastructure Specialist"
-        assert sync_service._determine_specialization(job) == "DevOps_Cloud"
+    def test_determine_specialization_devops(self):
+        job = JobDetails(
+            id="1",
+            title="Kubernetes Infrastructure Specialist",
+            company="A",
+            location="B",
+            description="C",
+            posted_date="D",
+            seniority_level="E",
+            employment_type="F",
+            job_function="G",
+            industries="H",
+            link="I",
+        )
+        assert job.determine_specialization() == "DevOps_Cloud"
 
-    def test_determine_specialization_fullstack(self, sync_service):
-        job = MagicMock(spec=JobDetails)
-        job.title = "Full Stack Engineer"
-        assert sync_service._determine_specialization(job) == "FullStack"
+    def test_determine_specialization_fullstack(self):
+        job = JobDetails(
+            id="1",
+            title="Full Stack Engineer",
+            company="A",
+            location="B",
+            description="C",
+            posted_date="D",
+            seniority_level="E",
+            employment_type="F",
+            job_function="G",
+            industries="H",
+            link="I",
+        )
+        assert job.determine_specialization() == "FullStack"
 
-    def test_determine_specialization_general(self, sync_service):
-        job = MagicMock(spec=JobDetails)
-        job.title = "Software Manager"
-        assert sync_service._determine_specialization(job) == "General"
+    def test_determine_specialization_general(self):
+        job = JobDetails(
+            id="1",
+            title="Software Manager",
+            company="A",
+            location="B",
+            description="C",
+            posted_date="D",
+            seniority_level="E",
+            employment_type="F",
+            job_function="G",
+            industries="H",
+            link="I",
+        )
+        assert job.determine_specialization() == "General"
 
     def test_load_analysis_success(self, sync_service):
         mock_job_data = {

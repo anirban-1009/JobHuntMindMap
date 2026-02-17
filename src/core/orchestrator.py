@@ -29,9 +29,11 @@ class MindMapApp:
 
     def __init__(self, config_path: str) -> None:
         """Initialize services and load configuration."""
+        self.project_root = pathlib.Path(__file__).parents[2]
         self.config_path = pathlib.Path(config_path)
+
         self.config = self._load_config()
-        self.session_path = pathlib.Path("data/session.json")
+        self.session_path = self.project_root / "data" / "session.json"
         self.llm = get_llm_client(self.config.get("ai", {}))
 
         # Service Initialization
@@ -94,8 +96,24 @@ class MindMapApp:
                 filtered = self._filter_jobs(list(unique))
 
                 print(f"{Fore.CYAN}\nTotal unique jobs found: {len(filtered)} (after filtering)")
-                for job in filtered[:10]:
-                    print(f"- {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
+
+            # Save search results to DB as discovery cache
+            extractor = JobDetailsExtractor(browser, llm_client=self.llm)
+            for job in filtered:
+                # We save minimal info; status 'discovered' means JD not yet scraped
+                extractor.db.save_job(
+                    {
+                        "id": job.id,
+                        "title": job.title,
+                        "company": job.company,
+                        "location": job.location,
+                        "link": job.link,
+                        "status": "discovered",
+                    }
+                )
+
+            for job in filtered[:10]:
+                print(f"- {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
         except Exception as error:
             print(f"{Fore.RED}Search failed: {error}")
             sys.exit(1)
@@ -151,6 +169,23 @@ class MindMapApp:
 
                     unique = list({job.id: job for job in all_found if job.id}.values())
                     filtered = self._filter_jobs(unique)
+
+                # Add previously discovered jobs from DB that haven't been scraped yet
+                discovered_jobs = extractor.db.get_jobs_by_status("discovered")
+                if discovered_jobs:
+                    logger.info(f"Adding {len(discovered_jobs)} previously discovered jobs from cache.")
+                    for dj in discovered_jobs:
+                        if dj["id"] not in {j.id for j in filtered}:
+                            # Convert DB dict to object compatible with extractor
+                            filtered.append(
+                                SimpleNamespace(
+                                    id=dj["id"],
+                                    title=dj["title"],
+                                    company=dj["company"],
+                                    location=dj["location"],
+                                    link=dj["link"],
+                                )
+                            )
 
                 # Fast Scoring (skip if specific job requested as we don't have details yet)
                 if not job_id:
@@ -255,15 +290,30 @@ class MindMapApp:
             print(f"{Fore.RED}Scoring failed: {error}")
             sys.exit(1)
 
-    def analyze_gaps(self, min_score: int) -> None:
+    def analyze_gaps(self, min_score: int, tag: Optional[str] = None) -> None:
         """Identify missing skills across highly-rated job postings."""
-        print(f"{Fore.CYAN}Analyzing gaps across jobs scored >= {min_score}...")
-        report = self.analysis_service.run_gap_analysis(min_score)
+        filter_msg = f" (tag: {tag})" if tag else ""
+        print(f"{Fore.CYAN}Analyzing gaps across jobs scored >= {min_score}{filter_msg}...")
+        report = self.analysis_service.run_gap_analysis(min_score, tag=tag)
         if report:
             print(f"{Fore.GREEN}\n=== Top Missing Skills ===")
             for skill, count in report.skill_frequency.items():
                 print(f"- {skill}: {count} jobs")
             print(f"{Fore.CYAN}\n=== Improvement Plan ===\n{report.improvement_plan}")
+
+            # Also Sync to Obsidian
+            from src.generator.sync_service import SyncService
+
+            sync = SyncService(self.config)
+            content = sync.template_manager.render_gap_analysis(report, min_score, tag)
+            filename = f"Gap Analysis - {tag if tag else 'All'}.md"
+            file_path = sync.vault_manager.write_file(content, filename, "analysis")
+            print(f"{Fore.GREEN}\nGap analysis report saved to Obsidian: {file_path}")
+        else:
+            print(f"{Fore.YELLOW}No jobs found with a score of {min_score} or higher{filter_msg}.")
+            print(
+                f"{Fore.WHITE}Try running '{Fore.CYAN}uv run mindmap score --all{Fore.WHITE}' first, or lowering the threshold."
+            )
 
     def notify(self, min_score: int) -> None:
         """Send job digest emails for jobs meeting the score threshold."""
@@ -293,7 +343,13 @@ class MindMapApp:
         SyncService(self.config).sync()
         print(f"{Fore.GREEN}Sync complete.")
 
-    def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 190) -> Optional[Dict[str, str]]:
+    def sync_back(self) -> None:
+        """Sync status and changes from Obsidian back to the database."""
+        print(f"{Fore.CYAN}Syncing back from Obsidian...")
+        SyncService(self.config).sync_from_obsidian()
+        print(f"{Fore.GREEN}Sync-back complete.")
+
+    def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 300) -> Optional[Dict[str, str]]:
         """Generate personalized referral message for a job and contact."""
         job = JobDetailsExtractor(None).get_cached_job(job_id)
         if not job:

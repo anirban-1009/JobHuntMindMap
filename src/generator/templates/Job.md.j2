@@ -11,6 +11,7 @@
 - **Link:** [Apply Here]({{ job.link }})
 - **Added:** {{ job.created_at }}
 - **Status:** #ToApply #{{ specialization }}
+- **Candidate Exp:** {{ resume.total_experience_years if resume.total_experience_years else 'Unknown' }} years
 
 ## Analysis
 **Reasoning:**
@@ -31,6 +32,17 @@
 - [[{{ person.filename }}|{{ person.name }}]] - {{ person.title }}
 {% else %}
 - No direct connections found.
+{% endfor %}
+
+## Referral Messages
+{% for req in referrals %}
+### Sent to {{ req.connection_name }} ({{ req.created_at }})
+- **Status:** {{ req.status }}
+- **Message:**
+> {{ req.message_content }}
+
+{% else %}
+- No referral messages generated yet.
 {% endfor %}
 
 ## Job Description

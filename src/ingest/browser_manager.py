@@ -32,32 +32,57 @@ class BrowserManager:
         try:
             self.playwright = sync_playwright().start()
 
-            # Using chromium
-            self.browser = self.playwright.chromium.launch(
-                headless=self.headless,
-                args=["--no-sandbox", "--disable-setuid-sandbox"],  # Docker compatibility
+            # Using chromium with a realistic User-Agent and anti-bot flags
+            user_agent = (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
 
-            # Load state if exists, otherwise create new context
+            self.browser = self.playwright.chromium.launch(
+                headless=self.headless,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                ],
+                ignore_default_args=["--enable-automation"],
+            )
+
+            # Context options
+            context_options = {
+                "user_agent": user_agent,
+                "viewport": {"width": 1280, "height": 720},
+            }
+
+            # Load state if exists
             if self.session_path and self.session_path.exists():
                 logger.info(f"Loading session from {self.session_path}")
-                self.context = self.browser.new_context(storage_state=str(self.session_path))
-            else:
-                self.context = self.browser.new_context()
+                context_options["storage_state"] = str(self.session_path)
+
+            self.context = self.browser.new_context(**context_options)
+
+            # Extra stealth: remove navigator.webdriver
+            self.context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
             self.page = self.context.new_page()
+            self.page.set_default_timeout(30000)  # 30 seconds
 
         except Exception as e:
             raise ScraperError(f"Failed to start browser: {e}") from e
 
-    def stop(self):
+    def stop(self, skip_save: bool = False):
         """Stops the browser and saves state if configured."""
         try:
-            if self.session_path and self.context:
-                # Create parent dir if needed
-                self.session_path.parent.mkdir(parents=True, exist_ok=True)
-                self.context.storage_state(path=str(self.session_path))
-                logger.info(f"Session saved to {self.session_path}")
+            if not skip_save and self.session_path and self.context:
+                # Don't save if we are on a login page and not in login_manual
+                # This prevents overwriting a good session with a bad/expired one.
+                current_url = self.page.url if self.page else ""
+                if "linkedin.com/login" in current_url or "checkpoint/lg/login" in current_url:
+                    logger.warning("Currently on login page. Skipping session save to prevent overwriting.")
+                else:
+                    self.session_path.parent.mkdir(parents=True, exist_ok=True)
+                    self.context.storage_state(path=str(self.session_path))
+                    logger.info(f"Session saved to {self.session_path}")
 
             if self.context:
                 self.context.close()

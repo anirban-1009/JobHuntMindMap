@@ -62,7 +62,7 @@ class AnalysisService:
                     scored.append((job, result))
         return scored
 
-    def run_gap_analysis(self, min_score: int) -> Any:
+    def run_gap_analysis(self, min_score: int, tag: Optional[str] = None) -> Any:
         """Runs gap analysis across high-scoring jobs using database records."""
         if not self.extractor.db:
             return None
@@ -71,9 +71,18 @@ class AnalysisService:
         results = []
         for row in analyses:
             try:
+                # Reconstruct JobDetails from DB or cache
+                job = self.extractor.get_cached_job(row["id"])
+                if not job:
+                    continue
+
+                # Filter by tag if requested
+                if tag and job.specialization != tag:
+                    continue
+
                 data = json.loads(row["analysis_data"])
                 res = ScoringResult(**data)
-                results.append(res)
+                results.append((job, res))
             except Exception as e:
                 logger.warning(f"Failed to load analysis for {row['id']}: {e}")
 
