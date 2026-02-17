@@ -29,9 +29,11 @@ class MindMapApp:
 
     def __init__(self, config_path: str) -> None:
         """Initialize services and load configuration."""
+        self.project_root = pathlib.Path(__file__).parents[2]
         self.config_path = pathlib.Path(config_path)
+
         self.config = self._load_config()
-        self.session_path = pathlib.Path("data/session.json")
+        self.session_path = self.project_root / "data" / "session.json"
         self.llm = get_llm_client(self.config.get("ai", {}))
 
         # Service Initialization
@@ -94,8 +96,24 @@ class MindMapApp:
                 filtered = self._filter_jobs(list(unique))
 
                 print(f"{Fore.CYAN}\nTotal unique jobs found: {len(filtered)} (after filtering)")
-                for job in filtered[:10]:
-                    print(f"- {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
+
+            # Save search results to DB as discovery cache
+            extractor = JobDetailsExtractor(browser, llm_client=self.llm)
+            for job in filtered:
+                # We save minimal info; status 'discovered' means JD not yet scraped
+                extractor.db.save_job(
+                    {
+                        "id": job.id,
+                        "title": job.title,
+                        "company": job.company,
+                        "location": job.location,
+                        "link": job.link,
+                        "status": "discovered",
+                    }
+                )
+
+            for job in filtered[:10]:
+                print(f"- {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
         except Exception as error:
             print(f"{Fore.RED}Search failed: {error}")
             sys.exit(1)
@@ -151,6 +169,23 @@ class MindMapApp:
 
                     unique = list({job.id: job for job in all_found if job.id}.values())
                     filtered = self._filter_jobs(unique)
+
+                # Add previously discovered jobs from DB that haven't been scraped yet
+                discovered_jobs = extractor.db.get_jobs_by_status("discovered")
+                if discovered_jobs:
+                    logger.info(f"Adding {len(discovered_jobs)} previously discovered jobs from cache.")
+                    for dj in discovered_jobs:
+                        if dj["id"] not in {j.id for j in filtered}:
+                            # Convert DB dict to object compatible with extractor
+                            filtered.append(
+                                SimpleNamespace(
+                                    id=dj["id"],
+                                    title=dj["title"],
+                                    company=dj["company"],
+                                    location=dj["location"],
+                                    link=dj["link"],
+                                )
+                            )
 
                 # Fast Scoring (skip if specific job requested as we don't have details yet)
                 if not job_id:

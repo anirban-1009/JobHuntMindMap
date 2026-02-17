@@ -103,12 +103,14 @@ class TestCLIValidation:
 class TestCLIJobIngestion:
     """Tests for job discovery, scraping, and session management."""
 
+    @patch("src.core.orchestrator.JobDetailsExtractor")
     @patch("src.core.orchestrator.BrowserManager")
     @patch("src.core.orchestrator.JobSearcher")
     def test_search_command(
         self,
         mock_searcher_class: MagicMock,
         mock_browser_manager_class: MagicMock,
+        mock_extractor_class: MagicMock,
         runner: CliRunner,
         mock_config: pathlib.Path,
     ) -> None:

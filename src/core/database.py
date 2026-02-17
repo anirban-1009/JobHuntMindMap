@@ -133,7 +133,11 @@ class DatabaseManager:
             salary=excluded.salary,
             apply_link=excluded.apply_link,
             raw_data=excluded.raw_data,
-            relevance_score=COALESCE(excluded.relevance_score, jobs.relevance_score),
+        status=CASE 
+            WHEN jobs.status = 'discovered' THEN excluded.status 
+            ELSE jobs.status 
+        END,
+        relevance_score=COALESCE(excluded.relevance_score, jobs.relevance_score),
             analysis_data=COALESCE(excluded.analysis_data, jobs.analysis_data),
             specialization=excluded.specialization,
             updated_at=CURRENT_TIMESTAMP
@@ -199,6 +203,17 @@ class DatabaseManager:
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to get jobs: {e}")
+            return []
+
+    def get_jobs_by_status(self, status: str) -> List[Dict[str, Any]]:
+        """Retrieves jobs filtered by status."""
+        query = "SELECT * FROM jobs WHERE status = ?"
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute(query, (status,))
+                return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.error(f"Failed to get jobs by status {status}: {e}")
             return []
 
     def job_exists(self, job_id: str) -> bool:

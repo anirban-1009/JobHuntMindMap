@@ -59,3 +59,60 @@ class TestMindMapApp:
 
             app.find_network("123")
             app.referral_service.find_potential_connections.assert_called_once_with(mock_job)
+
+    def test_scrape_with_id(self, app):
+        with (
+            patch("src.core.orchestrator.JobDetailsExtractor") as mock_extractor_cls,
+            patch("src.core.orchestrator.BrowserManager"),
+        ):
+            mock_extractor = mock_extractor_cls.return_value
+            app.scrape(headless=True, limit=None, force=False, job_id="123")
+            mock_extractor.extract_multiple_jobs.assert_called_once()
+
+    def test_scrape_no_jobs(self, app):
+        with (
+            patch("src.core.orchestrator.JobSearcher") as mock_searcher_cls,
+            patch("src.core.orchestrator.BrowserManager"),
+        ):
+            mock_searcher = mock_searcher_cls.return_value
+            mock_searcher.search.return_value = []
+            app.scrape(headless=True, limit=None, force=False)
+            mock_searcher.search.assert_called_once()
+
+    def test_search(self, app):
+        with (
+            patch("src.core.orchestrator.JobSearcher") as mock_searcher_cls,
+            patch("src.core.orchestrator.BrowserManager"),
+        ):
+            mock_searcher = mock_searcher_cls.return_value
+            app.search(headless=True)
+            mock_searcher.search.assert_called_once()
+
+    def test_sync(self, app):
+        with patch("src.core.orchestrator.SyncService") as mock_sync_cls:
+            mock_sync = mock_sync_cls.return_value
+            app.sync()
+            mock_sync.sync.assert_called_once()
+
+    def test_referral_job_not_found(self, app):
+        with patch("src.core.orchestrator.JobDetailsExtractor") as mock_extractor_cls:
+            mock_extractor = mock_extractor_cls.return_value
+            mock_extractor.get_cached_job.return_value = None
+            res = app.referral("999", "Alice")
+            assert res is None
+
+    def test_tailor_resume(self, app):
+        with patch("src.core.orchestrator.JobDetailsExtractor") as mock_extractor_cls:
+            mock_extractor = mock_extractor_cls.return_value
+            mock_extractor.get_cached_job.return_value = MagicMock()
+            app.resume_service.get_resume_data.return_value = {"skills": []}
+
+            with patch("src.core.orchestrator.ResumeTailorer") as mock_tailorer_cls:
+                mock_tailorer = mock_tailorer_cls.return_value
+                mock_tailorer.tailor_resume.return_value = {}
+                mock_tailorer.generate_latex.return_value = "latex"
+                mock_tailorer.compile_pdf.return_value = None
+
+                res = app.tailor_resume("123")
+                assert res is not None
+                assert "Resume_" in str(res)
