@@ -1,7 +1,10 @@
 import json
+import pathlib
 import re
-from typing import Any, Dict, Set
+from typing import Any, Dict, List, Set
 
+from src.core.network_graph import NetworkGraphBuilder
+from src.core.referral_service import ReferralService
 from src.core.relevance_scorer import ScoringResult
 from src.generator.dashboard_generator import DashboardGenerator
 from src.generator.template_manager import TemplateManager
@@ -21,6 +24,7 @@ class SyncService:
         self.template_manager = TemplateManager()
         self.dashboard_generator = DashboardGenerator(config)
         self.extractor = JobDetailsExtractor(None)  # Used for cache access
+        self.referral_service = ReferralService(None, config)  # LLM not needed for matching
 
     def sync(self) -> None:
         """Syncs jobs, companies, and analysis to the Obsidian Vault."""
@@ -30,55 +34,108 @@ class SyncService:
         self.vault_manager.ensure_folders_exist()
 
         # 2. Sync Jobs and Companies
-        self._sync_jobs_and_companies()
+        self._sync_all()
 
         # 3. Generate Dashboard
         self.dashboard_generator.generate()
 
         logger.info("Obsidian sync complete.")
 
-    def _sync_jobs_and_companies(self) -> None:
-        """Reads jobs from the database and writes them to the Vault."""
+    def _sync_all(self) -> None:
+        """Reads jobs and connections and writes them to the Vault with links."""
         if not self.extractor.db:
             logger.warning("Database not available. Nothing to sync.")
             return
 
         all_jobs_data = self.extractor.db.get_all_jobs(limit=10000)
-        if not all_jobs_data:
-            logger.warning("No jobs found in database to sync.")
-            return
+        jobs: List[Dict[str, Any]] = []
+        for jd in all_jobs_data:
+            job_obj = self.extractor.get_cached_job(jd["id"])
+            if job_obj:
+                score = self._load_analysis(jd)
+                jobs.append({"details": job_obj, "score": score})
 
-        logger.info(f"Syncing {len(all_jobs_data)} jobs from database...")
+        # Prepare paths for NetworkGraphBuilder
+        user_cfg = self.config.get("user", {})
+        conn_path = user_cfg.get("linkedin_connections_path") or self.config.get("network", {}).get("connections_path")
+        connections_path = pathlib.Path(conn_path or "data/Connections.csv")
 
-        # Track companies to generate company notes later
-        companies = set()
-        synced_count = 0
+        builder = NetworkGraphBuilder(connections_path, metadata_path=user_cfg.get("linkedin_metadata_path"))
+        all_connections = builder.connections
 
-        for job_data in all_jobs_data:
-            job_id = job_data["id"]
-            job = self.extractor.get_cached_job(job_id)
-            if not job:
-                logger.warning(f"Could not load job {job_id} for sync.")
-                continue
+        # Prepare Lookups
+        company_to_jobs = {}
+        company_to_people = {}
 
-            # Load Analysis if available (from DB)
-            score = self._load_analysis(job_data)
+        for j in jobs:
+            co = j["details"].company
+            if co:
+                if co not in company_to_jobs:
+                    company_to_jobs[co] = []
+                company_to_jobs[co].append(j)
 
-            # Generate Job Note
-            self._write_job_note(job, score)
-            synced_count += 1
+        for p in all_connections:
+            co = p.company
+            if co:
+                if co not in company_to_people:
+                    company_to_people[co] = []
+                company_to_people[co].append(p)
 
-            # Track Company
-            if job.company and job.company != "Unknown":
-                companies.add(job.company)
+        # 1. Sync People
+        for person in all_connections:
+            # Jobs at their company
+            p_company = person.company
+            associated_jobs = []
+            if p_company in company_to_jobs:
+                for j in company_to_jobs[p_company]:
+                    associated_jobs.append(
+                        {
+                            "title": j["details"].title,
+                            "filename": f"{j['details'].title} - {j['details'].company}",
+                            "status": "To Apply",  # Optional: get from DB
+                        }
+                    )
 
-        logger.info(f"Synced {synced_count} job notes.")
+            content = self.template_manager.render_person(person, jobs=associated_jobs)
+            self.vault_manager.write_file(content, f"{person.full_name}.md", "people")
 
-        # Generate Company Notes
-        for company_name in companies:
-            self._write_company_note(company_name)
+        # 2. Sync Jobs
+        for j in jobs:
+            job = j["details"]
+            score = j["score"]
 
-        logger.info(f"Synced {len(companies)} company notes.")
+            # People at this company
+            people_at_co = []
+            if job.company in company_to_people:
+                for p in company_to_people[job.company]:
+                    people_at_co.append({"name": p.full_name, "filename": f"{p.full_name}", "title": p.position})
+
+            specialization = self._determine_specialization(job)
+            content = self.template_manager.render_job(job, score, specialization=specialization, people=people_at_co)
+            filename = f"{job.title} - {job.company}.md"
+            self.vault_manager.write_file(content, filename, "jobs", subfolder=specialization)
+
+        # 3. Sync Companies
+        all_companies = set(list(company_to_jobs.keys()) + list(company_to_people.keys()))
+        for co in all_companies:
+            co_jobs = []
+            if co in company_to_jobs:
+                for j in company_to_jobs[co]:
+                    co_jobs.append(
+                        {
+                            "title": j["details"].title,
+                            "filename": f"{j['details'].title} - {j['details'].company}",
+                            "status": "Active",
+                        }
+                    )
+
+            co_people = []
+            if co in company_to_people:
+                for p in company_to_people[co]:
+                    co_people.append({"name": p.full_name, "filename": f"{p.full_name}", "title": p.position})
+
+            content = self.template_manager.render_company(name=co, jobs=co_jobs, people=co_people)
+            self.vault_manager.write_file(content, f"{co}.md", "companies")
 
     def _load_analysis(self, job_data: Dict[str, Any]) -> ScoringResult:
         """Loads analysis for a job from DB record, returning a default if not found."""
@@ -98,20 +155,6 @@ class SyncService:
             missing_skills=[],
         )
 
-    def _write_job_note(self, job: JobDetails, score: ScoringResult) -> None:
-        """Render and write a Job note."""
-        try:
-            # Determine grouping based on job role/specialization
-            specialization = self._determine_specialization(job)
-
-            content = self.template_manager.render_job(job, score, specialization=specialization)
-            filename = f"{job.title} - {job.company}.md"
-
-            file_path = self.vault_manager.write_file(content, filename, "jobs", subfolder=specialization)
-            logger.info(f"Created/Updated job note: {file_path.relative_to(self.vault_manager.vault_path)}")
-        except Exception as e:
-            logger.error(f"Failed to write job note for {job.id}: {e}")
-
     def _determine_specialization(self, job: JobDetails) -> str:
         """Categorize job into typical tech specializations."""
         title = job.title.lower()
@@ -127,11 +170,6 @@ class SyncService:
                 "computer vision",
                 "generative ai",
                 "llm",
-                "deep learning",
-                "transformers",
-                "pytorch",
-                "tensorflow",
-                "neural",
             ]
         ):
             return "AI_ML"
@@ -168,26 +206,6 @@ class SyncService:
             return "FullStack"
 
         return "General"
-
-    def _write_company_note(self, company_name: str) -> None:
-        """Render and write a Company note."""
-        # Check if it already exists to avoid overwriting user notes
-        if self.vault_manager.file_exists(f"{company_name}.md", "companies"):
-            return
-
-        try:
-            # For now, we generate a basic placeholder.
-            # Future enhancements could scrape company details or aggregate job stats.
-            content = self.template_manager.render_company(
-                name=company_name,
-                industry="Unknown",
-                location="Unknown",
-                jobs=[],  # We could link back to jobs here in the future
-            )
-            filename = f"{company_name}.md"
-            self.vault_manager.write_file(content, filename, "companies")
-        except Exception as e:
-            logger.error(f"Failed to write company note for {company_name}: {e}")
 
     def prune_vault(self) -> None:
         """Removes job files from the vault that are no longer in the database."""

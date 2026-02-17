@@ -37,7 +37,13 @@ class TemplateManager:
             lstrip_blocks=True,
         )
 
-    def render_job(self, job: JobDetails, score: ScoringResult, specialization: str = "General") -> str:
+    def render_job(
+        self,
+        job: JobDetails,
+        score: ScoringResult,
+        specialization: str = "General",
+        people: Optional[List[Dict[str, str]]] = None,
+    ) -> str:
         """
         Renders the Job.md template.
 
@@ -45,12 +51,14 @@ class TemplateManager:
             job: JobDetails object.
             score: ScoringResult object.
             specialization: Job specialization tag.
+            people: List of person dictionaries (name, filename, title).
 
         Returns:
             Rendered Markdown string.
         """
+        people = people or []
         template = self.env.get_template("Job.md.j2")
-        return template.render(job=job, score=score, specialization=specialization)
+        return template.render(job=job, score=score, specialization=specialization, people=people)
 
     def render_company(
         self,
@@ -87,15 +95,17 @@ class TemplateManager:
             people=people,
         )
 
-    def render_person(self, person: Connection) -> str:
+    def render_person(self, person: Connection, jobs: Optional[List[Dict[str, str]]] = None) -> str:
         """
         Renders the Person.md template.
 
         Args:
             person: Connection object.
+            jobs: List of job dictionaries (title, filename, status).
 
         Returns:
             Rendered Markdown string.
         """
+        jobs = jobs or []
         template = self.env.get_template("Person.md.j2")
-        return template.render(person=person)
+        return template.render(person=person, jobs=jobs)

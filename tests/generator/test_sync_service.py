@@ -78,27 +78,45 @@ class TestSyncService:
         assert "not been scored" in result.reasoning
 
     def test_sync_success(self, sync_service):
-        sync_service._sync_jobs_and_companies = MagicMock()
+        sync_service._sync_all = MagicMock()
         sync_service.sync()
         sync_service.vault_manager.ensure_folders_exist.assert_called_once()
-        sync_service._sync_jobs_and_companies.assert_called_once()
+        sync_service._sync_all.assert_called_once()
         sync_service.dashboard_generator.generate.assert_called_once()
 
-    @patch("src.generator.sync_service.SyncService._load_analysis")
-    @patch("src.generator.sync_service.SyncService._write_job_note")
-    @patch("src.generator.sync_service.SyncService._write_company_note")
-    def test_sync_jobs_and_companies(self, mock_write_company, mock_write_job, mock_load_analysis, sync_service):
+    def test_sync_all(self, sync_service):
         # Mock database to return some job rows
         mock_db = MagicMock()
         sync_service.extractor.db = mock_db
-        mock_db.get_all_jobs.return_value = [{"id": "123"}]
+        sync_service.extractor.db.get_all_jobs.return_value = [{"id": "123", "analysis_data": None}]
 
         # Mock extractor to return a job
         mock_job = MagicMock(spec=JobDetails)
+        mock_job.id = "123"
+        mock_job.title = "SDE"
         mock_job.company = "TestCo"
+        mock_job.description = "Test Description"
         sync_service.extractor.get_cached_job.return_value = mock_job
 
-        sync_service._sync_jobs_and_companies()
+        # Mock NetworkGraphBuilder
+        with patch("src.generator.sync_service.NetworkGraphBuilder") as mock_builder_class:
+            mock_builder = mock_builder_class.return_value
+            mock_person = MagicMock()
+            mock_person.full_name = "John Doe"
+            mock_person.company = "TestCo"
+            mock_person.position = "Manager"
+            mock_builder.connections = [mock_person]
 
-        mock_write_job.assert_called_once()
-        mock_write_company.assert_called_once_with("TestCo")
+            # Mock template manager return values
+            sync_service.template_manager.render_person.return_value = "person content"
+            sync_service.template_manager.render_job.return_value = "job content"
+            sync_service.template_manager.render_company.return_value = "company content"
+
+            sync_service._sync_all()
+
+        # Check if files were written
+        from unittest.mock import ANY
+
+        sync_service.vault_manager.write_file.assert_any_call("person content", "John Doe.md", "people")
+        sync_service.vault_manager.write_file.assert_any_call("job content", "SDE - TestCo.md", "jobs", subfolder=ANY)
+        sync_service.vault_manager.write_file.assert_any_call("company content", "TestCo.md", "companies")

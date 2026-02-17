@@ -12,6 +12,7 @@ Instead of tracking applications in endless spreadsheets, this tool generates a 
 
 ## Documentation
 *   [Features & Requirements](docs/REQUIREMENTS.md) - What the tool does.
+*   [CLI Reference](docs/CLI_REFERENCE.md) - Detailed guide for all command-line tools.
 *   [Mind Map Structure](docs/MIND_MAP_STRUCTURE.md) - How the Obsidian vault is organized to visualize your search.
 *   [Architecture](docs/ARCHITECTURE.md) - How the system is built.
 *   [Data Processing](docs/DATA_PROCESSING.md) - The logic behind job matching and scoring.

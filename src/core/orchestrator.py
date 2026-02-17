@@ -101,7 +101,13 @@ class MindMapApp:
             sys.exit(1)
 
     def scrape(
-        self, headless: bool, limit: Optional[int], force: bool, min_fast_score: int = 0, do_score: bool = False
+        self,
+        headless: bool,
+        limit: Optional[int],
+        force: bool,
+        min_fast_score: int = 0,
+        do_score: bool = False,
+        job_id: Optional[str] = None,
     ) -> None:
         """Extract full details for found jobs and cache them."""
         print(f"{Fore.CYAN}Starting extraction (headless={headless})...")
@@ -110,51 +116,63 @@ class MindMapApp:
                 searcher = JobSearcher(browser)
                 extractor = JobDetailsExtractor(browser, llm_client=self.llm)
 
-                all_found = []
-                cfg = self.config.get("search", {})
-                seen_searches = set()
+                if job_id:
+                    # Specific job requested
+                    logger.info(f"Scraping specific job ID: {job_id}")
+                    # Create a dummy object with ID and Link so extractor can process it
+                    # We assume standard LinkedIn URL format
+                    dummy_link = f"https://www.linkedin.com/jobs/view/{job_id}/"
+                    dummy_job = SimpleNamespace(id=job_id, link=dummy_link, title=f"Job {job_id}")
+                    filtered = [dummy_job]
+                else:
+                    # Run full search
+                    all_found = []
+                    cfg = self.config.get("search", {})
+                    seen_searches = set()
 
-                for kw in cfg.get("keywords", []):
-                    for loc in self._get_locations():
-                        search_key = f"{kw}|{loc}"
-                        if search_key in seen_searches:
-                            continue
+                    for kw in cfg.get("keywords", []):
+                        for loc in self._get_locations():
+                            search_key = f"{kw}|{loc}"
+                            if search_key in seen_searches:
+                                continue
 
-                        results = searcher.search(kw, loc, cfg.get("filters", {}), cfg.get("location_type", "Any"))
-                        all_found.extend(results)
-                        seen_searches.add(search_key)
+                            results = searcher.search(kw, loc, cfg.get("filters", {}), cfg.get("location_type", "Any"))
+                            all_found.extend(results)
+                            seen_searches.add(search_key)
 
-                        # Optimization: if we found many jobs in this location for this keyword,
-                        # maybe we don't need to search sub-locations?
-                        # (Optional: stop after first location if results > 15)
-                        if len(results) >= 15:
-                            logger.debug(
-                                f"Found {len(results)} jobs for '{kw}' in '{loc}', skipping other locations for this keyword."
-                            )
-                            break
+                            # Optimization: if we found many jobs in this location for this keyword,
+                            # maybe we don't need to search sub-locations?
+                            # (Optional: stop after first location if results > 15)
+                            if len(results) >= 15:
+                                logger.debug(
+                                    f"Found {len(results)} jobs for '{kw}' in '{loc}', skipping other locations for this keyword."
+                                )
+                                break
 
-                unique = list({job.id: job for job in all_found if job.id}.values())
-                filtered = self._filter_jobs(unique)
+                    unique = list({job.id: job for job in all_found if job.id}.values())
+                    filtered = self._filter_jobs(unique)
 
-                # Fast Scoring
-                resume_data = self.resume_service.get_resume_data()
-                skills = []
-                if isinstance(resume_data.get("skills"), dict):
-                    for cat_skills in resume_data["skills"].values():
-                        if isinstance(cat_skills, list):
-                            skills.extend(cat_skills)
+                # Fast Scoring (skip if specific job requested as we don't have details yet)
+                if not job_id:
+                    resume_data = self.resume_service.get_resume_data()
+                    skills = []
+                    if isinstance(resume_data.get("skills"), dict):
+                        for cat_skills in resume_data["skills"].values():
+                            if isinstance(cat_skills, list):
+                                skills.extend(cat_skills)
 
-                fast_scorer = FastScorer(skills)
-                scored_jobs = []
-                for job in filtered:
-                    f_score = fast_scorer.score_result(job)
-                    if f_score >= min_fast_score:
-                        scored_jobs.append((f_score, job))
+                    fast_scorer = FastScorer(skills)
+                    scored_jobs = []
+                    for job in filtered:
+                        f_score = fast_scorer.score_result(job)
+                        if f_score >= min_fast_score:
+                            scored_jobs.append((f_score, job))
 
-                # Sort by score descending
-                scored_jobs.sort(key=lambda x: x[0], reverse=True)
-
-                final_jobs = [j[1] for j in scored_jobs]
+                    # Sort by score descending
+                    scored_jobs.sort(key=lambda x: x[0], reverse=True)
+                    final_jobs = [j[1] for j in scored_jobs]
+                else:
+                    final_jobs = filtered
                 if limit:
                     final_jobs = final_jobs[:limit]
 
@@ -275,7 +293,7 @@ class MindMapApp:
         SyncService(self.config).sync()
         print(f"{Fore.GREEN}Sync complete.")
 
-    def referral(self, job_id: str, connection_name: Optional[str]) -> Optional[Dict[str, str]]:
+    def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 190) -> Optional[Dict[str, str]]:
         """Generate personalized referral message for a job and contact."""
         job = JobDetailsExtractor(None).get_cached_job(job_id)
         if not job:
@@ -299,7 +317,7 @@ class MindMapApp:
             return None  # Signal to CLI that it needs input
 
         resume_data = self.resume_service.get_resume_data()
-        msg = self.referral_service.generate_message(job, target, resume_data)
+        msg = self.referral_service.generate_message(job, target, resume_data, max_chars=max_chars)
         self.referral_service.save_referral(job_id, target.full_name, msg)
         return {"to": target.full_name, "message": msg}
 

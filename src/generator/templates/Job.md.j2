@@ -26,6 +26,13 @@
 - {{ skill }}
 {% endfor %}
 
+## Connections
+{% for person in people %}
+- [[{{ person.filename }}|{{ person.name }}]] - {{ person.title }}
+{% else %}
+- No direct connections found.
+{% endfor %}
+
 ## Job Description
 {{ job.description }}
 

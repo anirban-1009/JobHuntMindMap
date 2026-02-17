@@ -109,3 +109,23 @@ class TestNetworkGraphBuilder:
         )
         matches = builder.find_matches(job)
         assert len(matches) == 0
+
+    def test_find_matches_sanitized(self, builder):
+        """Test matching jobs with connections using sanitized names (punctuation/case)."""
+        job = JobDetails(
+            id="job3",
+            title="SDE",
+            company="Build-It!!! ",
+            location="Remote",
+            description="",
+            posted_date="",
+            seniority_level="",
+            employment_type="",
+            job_function="",
+            industries="",
+            link="",
+        )
+        # 'BuildIt' was the connection company in the fixture
+        matches = builder.find_matches(job)
+        assert len(matches) == 1
+        assert matches[0].first_name == "Bob"

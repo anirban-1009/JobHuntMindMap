@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -109,7 +110,7 @@ class NetworkGraphBuilder:
 
     def find_matches(self, job: JobDetails) -> List[Connection]:
         """
-        Finds connections working at the job's company.
+        Finds connections working at the job's company using sanitized matching.
 
         Args:
             job: The JobDetails object.
@@ -120,18 +121,34 @@ class NetworkGraphBuilder:
         if not job.company:
             return []
 
-        # Normalize job company for matching
-        job_company = self.parser._normalize_company(job.company).lower()
+        # Normalize and sanitize job company for matching
+        job_company = self._sanitize_for_search(self.parser._normalize_company(job.company))
 
         matches = []
         for conn in self.connections:
             if conn.company:
-                conn_company = conn.company.lower()
-                # Basic fuzzy-ish match: contains
+                conn_company = self._sanitize_for_search(conn.company)
+                # Sanitized fuzzy-ish match: contains
                 if job_company in conn_company or conn_company in job_company:
                     matches.append(conn)
 
         return matches
+
+    def _sanitize_for_search(self, text: str) -> str:
+        """
+        Removes all non-alphanumeric characters for robust string comparison.
+
+        Args:
+            text: The string to sanitize.
+
+        Returns:
+            A lowercase string containing only alphanumeric characters.
+        """
+        if not text:
+            return ""
+        # Keep only alphanumeric characters
+        sanitized = re.sub(r"[^a-zA-Z0-9]", "", text)
+        return sanitized.lower()
 
     def update_connection(self, first_name: str, last_name: str, connected_on: str, **kwargs):
         """

@@ -8,20 +8,19 @@ from src.core.llm_client import FallbackClient, GeminiClient, LLMClient, OllamaC
 class TestLLMClient:
     """Test suite for LLMClient and its implementations."""
 
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_gemini_client_generate(self, mock_configure, mock_model_class):
+    @patch("src.core.ai.gemini.genai.Client")
+    def test_gemini_client_generate(self, mock_client_class):
         """Test Gemini client text generation."""
-        mock_model = MagicMock()
-        mock_model.generate_content.return_value.text = "Gemini Response"
-        mock_model_class.return_value = mock_model
+        mock_client = MagicMock()
+        mock_client.models.generate_content.return_value.text = "Gemini Response"
+        mock_client_class.return_value = mock_client
 
         client = GeminiClient(api_key="test_key")
         result = client.generate("Hello")
 
         assert result == "Gemini Response"
-        mock_configure.assert_called_once()
-        mock_model.generate_content.assert_called_once()
+        mock_client_class.assert_called_with(api_key="test_key")
+        mock_client.models.generate_content.assert_called_once()
 
     @patch("requests.post")
     def test_ollama_client_generate(self, mock_post):
@@ -121,7 +120,7 @@ class TestLLMClient:
     def test_factory_gemini(self):
         """Test factory function for Gemini provider."""
         config = {"provider": "gemini", "gemini_api_key": "abc"}
-        with patch("src.core.ai.gemini.genai.configure"):
+        with patch("src.core.ai.gemini.genai.Client"):
             client = get_llm_client(config)
             assert isinstance(client, GeminiClient)
             assert client.api_key == "abc"
@@ -134,8 +133,8 @@ class TestLLMClient:
         assert client.model_name == "phi3"
         assert client.base_url == "http://local:11434"
 
-    @patch("src.core.ai.gemini.genai.configure")
-    def test_factory_fallback_both_available(self, mock_configure):
+    @patch("src.core.ai.gemini.genai.Client")
+    def test_factory_fallback_both_available(self, mock_client):
         """Test factory in fallback mode when both are configured."""
         config = {"provider": "fallback", "gemini": {"api_key": "abc"}, "ollama": {"model_name": "phi3"}}
         client = get_llm_client(config)

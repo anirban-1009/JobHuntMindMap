@@ -36,8 +36,15 @@ class ReferralService:
         builder = NetworkGraphBuilder(connections_path, metadata_path=user_cfg.get("linkedin_metadata_path"))
         return builder.find_matches(job)
 
-    def generate_message(self, job: JobDetails, connection: Any, resume_data: Dict[str, Any]) -> str:
-        """Generates a personalized referral request message."""
+    def generate_message(
+        self, job: JobDetails, connection: Any, resume_data: Dict[str, Any], max_chars: int = 190
+    ) -> str:
+        """
+        Generates a personalized referral request message.
+
+        The message is limited to the specified max_chars to fit within
+        the target platform's (e.g. LinkedIn) constraints.
+        """
         # Format skills nicely
         skills_str = "None identified"
         if isinstance(resume_data.get("skills"), dict):
@@ -52,7 +59,7 @@ class ReferralService:
         candidate_first_name = resume_data.get("first_name", "Anirban")
 
         prompt = f"""
-        Generate a short, natural, and polite LinkedIn message to ask for a referral.
+        Generate a short, natural, and polite message to ask for a referral.
         Target Job: {job.title} at {job.company}
         Target Person: {connection_name}
         
@@ -60,13 +67,21 @@ class ReferralService:
         Top Skill: {skills_str.split(",")[0] if skills_str != "None identified" else "technical background"}
 
         Guidelines:
-        - CRITICAL: Total length MUST be under 190 characters.
+        - CRITICAL: Total length MUST be under {max_chars} characters (including spaces).
+        - Purpose: This will be used as a professional outreach message.
         - Tone: Warm, human, and professional (not robotic).
         - Flow: "Hi {first_name}, I'm {candidate_first_name}..." or similar natural opening.
-        - Content: Briefly mention interest in the {job.title} role and your fit, then ask if they'd be open to referring you.
+        - Content: Briefly mention interest in {job.title} and ask if they'd be open to referring you.
         - NO subject lines, NO placeholders.
         """
-        return self.llm.generate(prompt).strip()
+        message = self.llm.generate(prompt).strip()
+
+        if len(message) > max_chars:
+            logger.warning(
+                f"Generated message exceeds {max_chars} chars ({len(message)}). Truncating or re-trying might be needed."
+            )
+
+        return message
 
     def save_referral(self, job_id: str, connection_name: str, message: str, profile_url: str = "https://linkedin.com"):
         """Saves the referral request to the database."""
