@@ -293,7 +293,7 @@ class MindMapApp:
         SyncService(self.config).sync()
         print(f"{Fore.GREEN}Sync complete.")
 
-    def referral(self, job_id: str, connection_name: Optional[str]) -> Optional[Dict[str, str]]:
+    def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 190) -> Optional[Dict[str, str]]:
         """Generate personalized referral message for a job and contact."""
         job = JobDetailsExtractor(None).get_cached_job(job_id)
         if not job:
@@ -317,7 +317,7 @@ class MindMapApp:
             return None  # Signal to CLI that it needs input
 
         resume_data = self.resume_service.get_resume_data()
-        msg = self.referral_service.generate_message(job, target, resume_data)
+        msg = self.referral_service.generate_message(job, target, resume_data, max_chars=max_chars)
         self.referral_service.save_referral(job_id, target.full_name, msg)
         return {"to": target.full_name, "message": msg}
 

@@ -90,10 +90,11 @@ def notify(config, min_score):
 @click.option("--config", default="config.yaml")
 @click.argument("job_id")
 @click.option("--name", default=None)
-def refer(config, job_id, name):
+@click.option("--max-chars", default=190, type=int, help="Maximum characters for the message")
+def refer(config, job_id, name, max_chars):
     """Generate referral request for a job."""
     app = MindMapApp(config)
-    res = app.referral(job_id, name)
+    res = app.referral(job_id, name, max_chars=max_chars)
 
     if res is None:
         name = click.prompt(Fore.CYAN + "Enter connection name manually", default="Hiring Manager")
@@ -101,7 +102,7 @@ def refer(config, job_id, name):
 
     if res:
         click.echo(Fore.WHITE + "\n" + "=" * 50)
-        click.echo(Fore.GREEN + f"To: {res['to']}")
+        click.echo(Fore.GREEN + f"To: {res['to']} {Fore.CYAN}({len(res['message'])}/{max_chars} chars)")
         click.echo(Fore.WHITE + "-" * 50)
         click.echo(res["message"])
         click.echo(Fore.WHITE + "=" * 50 + "\n")

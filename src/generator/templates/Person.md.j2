@@ -11,5 +11,12 @@
 - {{ achievement }}
 {% endfor %}
 
+## Associated Jobs
+{% for job in jobs %}
+- [[{{ job.filename }}|{{ job.title }}]] ({{ job.status }})
+{% else %}
+- No jobs found at this company.
+{% endfor %}
+
 ## Notes
 {{ person.metadata.notes or '' }}

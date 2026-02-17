@@ -1,6 +1,7 @@
 from typing import Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from src.core.ai.base import LLMClient
 from src.utils.logger import get_logger
@@ -21,8 +22,11 @@ class GeminiClient(LLMClient):
         """
         self.api_key = api_key
         self.model_name = model_name
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name=self.model_name)
+        try:
+            self.client = genai.Client(api_key=api_key)
+        except Exception as e:
+            logger.error(f"Failed to initialize Gemini Client: {e}")
+            self.client = None
 
     def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
         """
@@ -35,14 +39,19 @@ class GeminiClient(LLMClient):
         Returns:
             str: Generated text content.
         """
-        try:
-            if system_instruction:
-                # Prepending system instruction for simple version compatibility
-                full_prompt = f"System Instruction: {system_instruction}\n\nUser Prompt: {prompt}"
-            else:
-                full_prompt = prompt
+        if not self.client:
+            return ""
 
-            response = self.model.generate_content(full_prompt)
+        try:
+            config = None
+            if system_instruction:
+                config = types.GenerateContentConfig(system_instruction=system_instruction)
+
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config,
+            )
             return response.text
         except Exception as e:
             logger.error(f"Gemini API error: {e}")
