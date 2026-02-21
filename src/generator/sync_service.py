@@ -210,6 +210,10 @@ class SyncService:
 
         removed_count = 0
         for file_path in jobs_folder.rglob("*.md"):
+            # Explicitly protect connections.csv if it somehow matches or exists here
+            if file_path.name.lower() == "connections.csv":
+                continue
+
             try:
                 content = file_path.read_text(encoding="utf-8")
                 # Look for "- **Job ID:** {id}"
@@ -230,6 +234,10 @@ class SyncService:
                 continue
 
             for file_path in folder.glob("*.md"):
+                # Explicitly protect connections.csv
+                if file_path.name.lower() == "connections.csv":
+                    continue
+
                 try:
                     content = file_path.read_text(encoding="utf-8")
                     if "No jobs found at this company." in content or "jobs: []" in content:

@@ -1,3 +1,5 @@
+import random
+import time
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -101,6 +103,9 @@ class JobSearcher:
         url = self.construct_search_url(keywords, location, filters, location_type)
         logger.info(f"Searching for jobs: {url}")
 
+        # Add random delay before navigating to the search URL to mimic human behavior
+        time.sleep(random.uniform(2.0, 5.0))
+
         self.browser.goto(url)
         page = self.browser.page
 
@@ -153,6 +158,7 @@ class JobSearcher:
         else:
             # Scroll to load more
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            time.sleep(random.uniform(1.5, 3.5))
 
             # Determine card selector based on found list selector
             # Standard items or any card-like element inside the container
