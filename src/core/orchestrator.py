@@ -235,7 +235,9 @@ class MindMapApp:
             print(f"{Fore.RED}Scrape failed: {error}")
             sys.exit(1)
 
-    def refresh_existing_jobs(self, headless: bool, limit: Optional[int], do_score: bool = False) -> None:
+    def refresh_existing_jobs(
+        self, headless: bool, limit: Optional[int], do_score: bool = False, unknown_only: bool = False
+    ) -> None:
         """Re-scrape details for jobs already present in the database."""
         print(f"{Fore.CYAN}Refreshing existing records (headless={headless})...")
         try:
@@ -248,6 +250,19 @@ class MindMapApp:
             if not all_jobs:
                 print(f"{Fore.YELLOW}No jobs found in database to refresh.")
                 return
+
+            if unknown_only:
+                all_jobs = [
+                    j
+                    for j in all_jobs
+                    if "Unknown" in j.get("title")
+                    or "Unknown" in j.get("company")
+                    or not j.get("title")
+                    or not j.get("company")
+                ]
+                if not all_jobs:
+                    print(f"{Fore.YELLOW}No unknown jobs found to refresh.")
+                    return
 
             if limit:
                 all_jobs = all_jobs[:limit]

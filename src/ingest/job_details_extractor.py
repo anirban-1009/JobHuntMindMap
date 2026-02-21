@@ -1,4 +1,5 @@
 import json
+import random
 import time
 from dataclasses import asdict, dataclass, fields
 from typing import Any, Dict, List, Optional
@@ -192,8 +193,8 @@ class JobDetailsExtractor:
         logger.info(f"Extracting details for job {job_id}: {job_url}")
         try:
             self.browser.goto(job_url)
-            # Give it a moment to settle even after goto returns
-            time.sleep(1)
+            # Give it a moment to settle even after goto returns, with random delay
+            time.sleep(random.uniform(2.0, 5.0))
         except Exception as e:
             logger.error(f"Failed to navigate to {job_url}: {e}")
             return None
@@ -433,6 +434,8 @@ class JobDetailsExtractor:
                 results.append(details)
 
             if delay > 0:
-                time.sleep(delay)
+                # Add randomness to avoid predictable intervals
+                actual_delay = delay + random.uniform(1.0, 3.0)
+                time.sleep(actual_delay)
 
         return results

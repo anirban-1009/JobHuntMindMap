@@ -56,9 +56,12 @@ def scrape(config, headless, limit, force, min_fast_score, score, job_id):
 @click.option("--headless", is_flag=True, default=False, help="Run in headless mode")
 @click.option("--limit", default=None, type=int, help="Limit number of jobs")
 @click.option("--score", is_flag=True, default=False, help="Perform LLM re-scoring after refresh")
-def refresh(config, headless, limit, score):
+@click.option(
+    "--unknown-only", is_flag=True, default=False, help="Only refresh jobs with Unknown Title or Unknown Company"
+)
+def refresh(config, headless, limit, score, unknown_only):
     """Re-scrape details for existing jobs in database."""
-    MindMapApp(config).refresh_existing_jobs(headless, limit, score)
+    MindMapApp(config).refresh_existing_jobs(headless, limit, score, unknown_only)
 
 
 @cli.command()
