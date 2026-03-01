@@ -63,9 +63,38 @@ class ResumeTailorer:
 
             tailored_updates = json.loads(response)
 
-            # Merge updates into resume_data
+            # Merge updates into resume_data safely to preserve dates/location
             tailored_data = resume_data.copy()
-            tailored_data.update(tailored_updates)
+            if "professional_summary" in tailored_updates:
+                tailored_data["professional_summary"] = tailored_updates["professional_summary"]
+
+            if "experience" in tailored_updates and "experience" in resume_data:
+                # Merge experience by matching title and company
+                new_experiences = []
+                for orig_job in resume_data["experience"]:
+                    updated_job = next(
+                        (
+                            job
+                            for job in tailored_updates["experience"]
+                            if job.get("company") == orig_job.get("company")
+                            and job.get("title") == orig_job.get("title")
+                        ),
+                        None,
+                    )
+
+                    if updated_job:
+                        merged_job = orig_job.copy()
+                        # Only update bullets to preserve dates and location
+                        if "bullets" in updated_job:
+                            merged_job["bullets"] = updated_job["bullets"]
+                        new_experiences.append(merged_job)
+                    else:
+                        new_experiences.append(orig_job.copy())
+
+                tailored_data["experience"] = new_experiences
+            elif "experience" in tailored_updates:
+                tailored_data["experience"] = tailored_updates["experience"]
+
             return tailored_data
 
         except Exception as e:
