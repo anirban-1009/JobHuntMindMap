@@ -51,7 +51,6 @@ class ResumeTailorer:
         response = self.llm.generate(prompt)
 
         # Parse the LLM response. We expect JSON for structured updates.
-        # This is a placeholder for actual parsing logic.
         try:
             import json
 
@@ -65,7 +64,27 @@ class ResumeTailorer:
 
             # Merge updates into resume_data
             tailored_data = resume_data.copy()
-            tailored_data.update(tailored_updates)
+            if "professional_summary" in tailored_updates:
+                tailored_data["professional_summary"] = tailored_updates["professional_summary"]
+
+            if "experience" in tailored_updates:
+                original_exp = tailored_data.get("experience", [])
+                new_exp = tailored_updates["experience"]
+
+                # Match by company and title, falling back to index matching if needed
+                for i, orig_item in enumerate(original_exp):
+                    match_found = False
+                    for new_item in new_exp:
+                        if new_item.get("company", "") == orig_item.get("company", "") and new_item.get(
+                            "title", ""
+                        ) == orig_item.get("title", ""):
+                            orig_item["bullets"] = new_item.get("bullets", orig_item.get("bullets", []))
+                            match_found = True
+                            break
+                    if not match_found and i < len(new_exp):
+                        # Fallback: assume same order
+                        orig_item["bullets"] = new_exp[i].get("bullets", orig_item.get("bullets", []))
+
             return tailored_data
 
         except Exception as e:

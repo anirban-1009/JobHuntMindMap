@@ -109,6 +109,7 @@
 \end{center}
 
 
+{% if experience %}
 %-----------EXPERIENCE-----------
 \section{Experience}
   \resumeSubHeadingListStart
@@ -127,8 +128,9 @@
     {% endfor %}
 
   \resumeSubHeadingListEnd
+{% endif %}
 
-
+{% if education %}
 %-----------EDUCATION-----------
 \section{Education}
   \resumeSubHeadingListStart
@@ -140,8 +142,9 @@
       { {{ edu.location }} }
     {% endfor %}
   \resumeSubHeadingListEnd
+{% endif %}
 
-
+{% if projects %}
 %-----------PROJECTS-----------
 \section{Projects}
     \resumeSubHeadingListStart
@@ -154,8 +157,9 @@
           \resumeItemListEnd
       {% endfor %}
     \resumeSubHeadingListEnd
+{% endif %}
 
-
+{% if skills %}
 %-----------TECHNICAL SKILLS-----------
 \section{Technical Skills}
  \begin{itemize}[leftmargin=0.15in, label={}]
@@ -165,6 +169,7 @@
      {% endfor %}
     }}
  \end{itemize}
+{% endif %}
 
 
 %-------------------------------------------
