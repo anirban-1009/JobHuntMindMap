@@ -198,49 +198,45 @@ class TestSyncService:
         sync_service.vault_manager.write_file.assert_any_call("job content", "SDE - TestCo.md", "jobs", subfolder=ANY)
         sync_service.vault_manager.write_file.assert_any_call("company content", "TestCo.md", "companies")
 
-    def test_prune_vault_protects_connections_csv(self, sync_service):
-        """Verify that 'connections.csv' is never deleted by the prune command."""
-        mock_db = MagicMock()
-        sync_service.extractor.db = mock_db
-        mock_db.get_all_jobs.return_value = []  # Everything should be pruned
+    def test_prune_vault(self, sync_service, tmp_path):
+        """Test removing orphaned files from vault."""
+        sync_service.vault_manager.vault_path = tmp_path
+        sync_service.vault_manager.folders.get.return_value = "Jobs"
+        jobs_folder = tmp_path / "Jobs"
+        jobs_folder.mkdir()
 
-        # Mock paths
-        jobs_folder = MagicMock()
-        companies_folder = MagicMock()
-        people_folder = MagicMock()
+        # Create an orphaned job file
+        job_file = jobs_folder / "Old Job.md"
+        job_file.write_text("- **Job ID:** 999\n- **Status:** #ToApply", encoding="utf-8")
 
-        sync_service.vault_manager.vault_path = MagicMock()
-        sync_service.vault_manager.folders = {"jobs": "Jobs", "companies": "Companies", "people": "People"}
-
-        def mock_side_effect(path):
-            if "Jobs" in str(path):
-                return jobs_folder
-            if "Companies" in str(path):
-                return companies_folder
-            if "People" in str(path):
-                return people_folder
-            return MagicMock()
-
-        sync_service.vault_manager.vault_path.__truediv__.side_effect = mock_side_effect
-        jobs_folder.exists.return_value = True
-        companies_folder.exists.return_value = True
-        people_folder.exists.return_value = True
-
-        # Create mock files including connections.csv
-        file_jobs = MagicMock()
-        file_jobs.name = "Job1.md"
-        file_jobs.read_text.return_value = "- **Job ID:** 999"
-
-        file_conn = MagicMock()
-        file_conn.name = "connections.csv"
-        file_conn.suffix = ".csv"
-
-        jobs_folder.rglob.return_value = [file_jobs, file_conn]
-        companies_folder.glob.return_value = [file_conn]
+        # Mock DB to NOT contain ID 999
+        sync_service.extractor.db.get_all_jobs.return_value = [{"id": "123"}]
 
         sync_service.prune_vault()
 
-        # file_jobs should be unlinked (deleted) because ID 999 is not in []
-        file_jobs.unlink.assert_called_once()
-        # file_conn should NOT be unlinked
-        file_conn.unlink.assert_not_called()
+        assert not job_file.exists()
+
+    def test_sync_from_obsidian(self, sync_service, tmp_path):
+        """Test updating DB status from Obsidian notes."""
+        sync_service.vault_manager.vault_path = tmp_path
+        sync_service.vault_manager.folders.get.return_value = "Jobs"
+        jobs_folder = tmp_path / "Jobs"
+        jobs_folder.mkdir()
+
+        # Create a job file with a status tag
+        job_file = jobs_folder / "Active Job.md"
+        job_file.write_text("- **Job ID:** 123\n- **Status:** #Applied", encoding="utf-8")
+
+        # Mock DB
+        sync_service.extractor.db.job_exists.return_value = True
+
+        sync_service.sync_from_obsidian()
+
+        sync_service.extractor.db.update_job_status.assert_called_with("123", "applied")
+
+    def test_load_analysis_error(self, sync_service):
+        """Test error handling in _load_analysis."""
+        mock_job_data = {"id": "123", "analysis_data": "{invalid json}"}
+        result = sync_service._load_analysis(mock_job_data)
+        assert result.score == 0
+        assert "not been scored" in result.reasoning

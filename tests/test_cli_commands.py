@@ -20,7 +20,7 @@ def clean_data_env() -> Generator[None, None, None]:
     def _cleanup():
         if data_dir.exists():
             for item in data_dir.iterdir():
-                if item.name == ".gitkeep":
+                if item.name == ".gitkeep" or item.name.lower() == "connections.csv":
                     continue
                 if item.is_dir():
                     shutil.rmtree(item)

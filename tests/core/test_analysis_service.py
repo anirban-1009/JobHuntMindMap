@@ -50,7 +50,7 @@ class TestAnalysisService:
         with patch.object(analysis_service.extractor, "get_cached_job", return_value=mock_job):
             analysis_service.score_job = MagicMock()
             analysis_service.score_all_cached_jobs("Resume text")
-            analysis_service.score_job.assert_called_once_with(mock_job, "Resume text")
+            analysis_service.score_job.assert_called_once_with(mock_job, "Resume text", force=False)
 
     def test_run_gap_analysis(self, analysis_service):
         mock_db = MagicMock()

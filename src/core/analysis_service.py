@@ -14,15 +14,16 @@ logger = get_logger(__name__)
 class AnalysisService:
     """Orchestrates job scoring and gap analysis."""
 
-    def __init__(self, llm_client: LLMClient):
+    def __init__(self, llm_client: LLMClient, user_experience_years: Optional[int] = None):
         """
         Initialize the AnalysisService.
 
         Args:
             llm_client: LLM client for analysis.
+            user_experience_years: Candidate's maximum years of experience.
         """
         self.llm = llm_client
-        self.scorer = RelevanceScorer(llm_client)
+        self.scorer = RelevanceScorer(llm_client, user_experience_years)
         self.gap_analyzer = GapAnalyzer(llm_client)
         self.extractor = JobDetailsExtractor(None)
 
@@ -43,10 +44,13 @@ class AnalysisService:
         if result and self.extractor.db:
             analysis_json = json.dumps(asdict(result))
             self.extractor.db.save_analysis(job.id, result.score, analysis_json)
+            if result.score == 0:
+                logger.info(f"Job {job.id} scored 0 (experience filter). Marking as rejected.")
+                self.extractor.db.update_job_status(job.id, "rejected")
             return result
         return result
 
-    def score_all_cached_jobs(self, resume_text: str) -> List[tuple[JobDetails, ScoringResult]]:
+    def score_all_cached_jobs(self, resume_text: str, force: bool = False) -> List[tuple[JobDetails, ScoringResult]]:
         """Scores all jobs found in the database that haven't been scored or need refreshing."""
         if not self.extractor.db:
             return []
@@ -57,7 +61,7 @@ class AnalysisService:
             # Reconstruct JobDetails from DB
             job = self.extractor.get_cached_job(job_data["id"])
             if job:
-                result = self.score_job(job, resume_text)
+                result = self.score_job(job, resume_text, force=force)
                 if result:
                     scored.append((job, result))
         return scored
