@@ -1,7 +1,7 @@
 import json
 import pathlib
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set
 
 from src.core.network_graph import NetworkGraphBuilder
 from src.core.referral_service import ReferralService
@@ -19,14 +19,14 @@ logger = get_logger(__name__)
 class SyncService:
     """Orchestrates the synchronization of data to Obsidian."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], llm_client: Optional[Any] = None):
         self.config = config
         self.vault_manager = VaultManager(config)
         self.template_manager = TemplateManager()
         self.dashboard_generator = DashboardGenerator(config)
-        self.extractor = JobDetailsExtractor(None)  # Used for cache access
-        self.referral_service = ReferralService(None, config)  # LLM not needed for matching
-        self.resume_service = ResumeService(None, config.get("user", {}).get("resume_path"))
+        self.extractor = JobDetailsExtractor(None, llm_client=llm_client)
+        self.referral_service = ReferralService(llm_client, config)
+        self.resume_service = ResumeService(llm_client, config.get("user", {}).get("resume_path"))
         self.resume_data = self.resume_service.get_resume_data()
 
     def sync(self) -> None:

@@ -295,12 +295,24 @@ class MindMapApp:
             if job_id:
                 job = JobDetailsExtractor(None).get_cached_job(job_id)
                 if job:
-                    res = self.analysis_service.score_job(job, resume_text)
+                    print(f"{Fore.CYAN}Scoring job '{job.title}' at '{job.company}'...")
+                    res = self.analysis_service.score_job(job, resume_text, force=True)
                     if res:
                         color = Fore.GREEN if res.score >= 70 else Fore.YELLOW
-                        print(f"Job {job_id}: {color}Score {res.score}{Fore.RESET} - {res.reasoning}")
+                        print(f"Job {job_id}: {color}Score {res.score}{Fore.RESET}")
+                        print(f"{Fore.WHITE}{res.reasoning}")
+                else:
+                    print(f"{Fore.RED}Job ID {job_id} not found in database cache. Run 'scrape' first.")
             elif score_all:
-                self.analysis_service.score_all_cached_jobs(resume_text)
+                print(f"{Fore.CYAN}Scoring all cached jobs against resume...")
+                results = self.analysis_service.score_all_cached_jobs(resume_text)
+                if not results:
+                    print(f"{Fore.YELLOW}No jobs found in database to score. Run 'search' or 'scrape' first.")
+                else:
+                    print(f"{Fore.GREEN}Finished scoring {len(results)} jobs.")
+                    for job, res in results:
+                        color = Fore.GREEN if res.score >= 70 else Fore.YELLOW
+                        print(f"[{job.id}] {color}Score {res.score}{Fore.RESET} - {job.title} @ {job.company}")
         except Exception as error:
             print(f"{Fore.RED}Scoring failed: {error}")
             sys.exit(1)
@@ -319,7 +331,7 @@ class MindMapApp:
             # Also Sync to Obsidian
             from src.generator.sync_service import SyncService
 
-            sync = SyncService(self.config)
+            sync = SyncService(self.config, llm_client=self.llm)
             content = sync.template_manager.render_gap_analysis(report, min_score, tag)
             filename = f"Gap Analysis - {tag if tag else 'All'}.md"
             file_path = sync.vault_manager.write_file(content, filename, "analysis")
@@ -355,13 +367,13 @@ class MindMapApp:
     def sync(self) -> None:
         """Export processed job data to external knowledge base."""
         print(f"{Fore.CYAN}Syncing to Obsidian...")
-        SyncService(self.config).sync()
+        SyncService(self.config, llm_client=self.llm).sync()
         print(f"{Fore.GREEN}Sync complete.")
 
     def sync_back(self) -> None:
         """Sync status and changes from Obsidian back to the database."""
         print(f"{Fore.CYAN}Syncing back from Obsidian...")
-        SyncService(self.config).sync_from_obsidian()
+        SyncService(self.config, llm_client=self.llm).sync_from_obsidian()
         print(f"{Fore.GREEN}Sync-back complete.")
 
     def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 300) -> Optional[Dict[str, str]]:
@@ -480,7 +492,7 @@ class MindMapApp:
         """Prune orphaned records from Obsidian."""
         from src.generator.sync_service import SyncService
 
-        SyncService(self.config).prune_vault()
+        SyncService(self.config, llm_client=self.llm).prune_vault()
 
     def _filter_jobs(self, jobs: List[Any]) -> List[Any]:
         """Filters jobs based on exclude_keywords in configuration."""

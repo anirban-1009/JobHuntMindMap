@@ -30,6 +30,7 @@ class ResumeTailorer:
             comment_start_string="<#",
             comment_end_string="#>",
         )
+        self.jinja_env.filters["latex_escape"] = self._sanitize_latex
 
     def tailor_resume(self, resume_data: Dict[str, Any], job_description: str) -> Dict[str, Any]:
         """
@@ -118,12 +119,13 @@ class ResumeTailorer:
         return template.render(**sanitized_data)
 
     def _deep_sanitize(self, data: Any) -> Any:
-        """Recursively sanitize data for LaTeX."""
+        """Recursively sanitize values for LaTeX. Keys are left alone for template accessibility."""
         if isinstance(data, str):
             return self._sanitize_latex(data)
         elif isinstance(data, list):
             return [self._deep_sanitize(item) for item in data]
         elif isinstance(data, dict):
+            # Do NOT sanitize keys here, as it breaks Jinja2 variable matching (e.g. first_name -> first\_name)
             return {k: self._deep_sanitize(v) for k, v in data.items()}
         return data
 
@@ -148,13 +150,23 @@ class ResumeTailorer:
         try:
             logger.info(f"Compiling PDF to {output_path}...")
             # Run pdflatex twice for references/cross-links if needed
-            for _ in range(2):
-                subprocess.run(
+            for i in range(2):
+                result = subprocess.run(
                     ["pdflatex", "-interaction=nonstopmode", "-output-directory", str(temp_dir), str(tex_file)],
                     capture_output=True,
                     text=True,
-                    check=True,
+                    check=False,  # Don't check yet, we'll check manually
                 )
+                if result.returncode != 0:
+                    # On failure, pdflatex still writes to stdout/stderr
+                    logger.warning(f"pdflatex encountered issues (exit code {result.returncode}) on pass {i + 1}")
+                    if i == 1:  # Only throw on the second attempt to be persistent
+                        # Detailed error from log or stdout
+                        error_msg = result.stdout or result.stderr
+                        logger.error(f"pdflatex final compilation failed:\n{error_msg[-2000:]}")  # Log last 2000 chars
+                        raise subprocess.CalledProcessError(
+                            result.returncode, result.args, output=result.stdout, stderr=result.stderr
+                        )
 
             # Move result to final destination
             pdf_result = temp_dir / "resume.pdf"
@@ -167,8 +179,11 @@ class ResumeTailorer:
                 raise FileNotFoundError("pdflatex failed to produce a PDF.")
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"pdflatex compilation failed: {e.stderr}")
-            raise RuntimeError(f"Failed to compile LaTeX: {e.stderr}")
+            # Try to extract the first error from stdout
+            stdout_lines = (e.output or "").split("\n")
+            first_error = next((line for line in stdout_lines if line.startswith("!")), "Unknown error")
+            logger.error(f"pdflatex compilation failed: {first_error}")
+            raise RuntimeError(f"pdflatex failed: {first_error}")
         finally:
             # Cleanup temp files (optional, keeping for debug for now or delete later)
             # In a production app, we should clean up.

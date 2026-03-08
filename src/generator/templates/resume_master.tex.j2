@@ -102,10 +102,10 @@
 
 \begin{center}
     \textbf{\Huge \scshape {{ first_name }} {{ last_name }}} \\ \vspace{1pt}
-    \small {{ phone }} $|$ \href{mailto:{{ email }}}{\underline{ {{ email }} }} $|$ 
-    \href{https://{{ linkedin }}}{\underline{ {{ linkedin }} }} $|$
-    \href{https://{{ github }}}{\underline{ {{ github }} }}
-    {% if website %} $|$ \href{https://{{ website }}}{\underline{ {{ website }} }}{% endif %}
+    \small {{ phone }} $|$ \href{mailto:{{ email }}}{\underline{ {{ email }} }}
+    {% if linkedin and linkedin != 'None' %} $|$ \href{ {{ linkedin if linkedin.startswith('http') else 'https://' + linkedin }} }{\underline{ {{ linkedin }} }}{% endif %}
+    {% if github and github != 'None' %} $|$ \href{ {{ github if github.startswith('http') else 'https://' + github }} }{\underline{ {{ github }} }}{% endif %}
+    {% if website and website != 'None' %} $|$ \href{ {{ website if website.startswith('http') else 'https://' + website }} }{\underline{ {{ website }} }}{% endif %}
 \end{center}
 
 
@@ -168,7 +168,7 @@
  \begin{itemize}[leftmargin=0.15in, label={}]
     \small{\item{
      {% for category, items in skills.items() %}
-     \textbf{ {{ category }}: }{ {{ items|join(', ') }} } \\
+     \textbf{ {{ category | latex_escape }}: }{ {{ items|join(', ') }} } \\
      {% endfor %}
     }}
  \end{itemize}
