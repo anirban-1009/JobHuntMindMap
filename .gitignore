@@ -50,3 +50,5 @@ output/*
 logs/*
 !logs/.gitkeep
 debug*
+temp_compile_*
+temp_compile
