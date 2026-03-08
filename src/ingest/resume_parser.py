@@ -2,12 +2,14 @@ import pathlib
 from typing import Any, Dict
 
 import pypdf
-from colorama import Fore, init
+from colorama import init
 
 from src.ingest.parsing_interface import ResumeParser
 from src.utils.exceptions import ResumeParsingError
+from src.utils.logger import get_logger
 
 init(autoreset=True)
+logger = get_logger(__name__)
 
 
 class PDFResumeParser(ResumeParser):
@@ -48,7 +50,7 @@ class PDFResumeParser(ResumeParser):
                     raw_text.append(text)
                 else:
                     # Log warning or handle image-based PDFs (OCR TODO)
-                    print(Fore.YELLOW + f"Warning: No text found on page {i + 1}. It might be an image.")
+                    logger.warning(f"No text found on page {i + 1}. It might be an image.")
 
         except Exception as e:
             # Identify specific pypdf exceptions if needed, otherwise wrap generic ones

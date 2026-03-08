@@ -30,6 +30,7 @@ class ResumeTailorer:
             comment_start_string="<#",
             comment_end_string="#>",
         )
+        self.jinja_env.filters["latex_escape"] = self._sanitize_latex
 
     def tailor_resume(self, resume_data: Dict[str, Any], job_description: str) -> Dict[str, Any]:
         """
@@ -62,28 +63,37 @@ class ResumeTailorer:
 
             tailored_updates = json.loads(response)
 
-            # Merge updates into resume_data
+            # Merge updates into resume_data safely to preserve dates/location
             tailored_data = resume_data.copy()
             if "professional_summary" in tailored_updates:
                 tailored_data["professional_summary"] = tailored_updates["professional_summary"]
 
-            if "experience" in tailored_updates:
-                original_exp = tailored_data.get("experience", [])
-                new_exp = tailored_updates["experience"]
+            if "experience" in tailored_updates and "experience" in resume_data:
+                # Merge experience by matching title and company
+                new_experiences = []
+                for orig_job in resume_data["experience"]:
+                    updated_job = next(
+                        (
+                            job
+                            for job in tailored_updates["experience"]
+                            if job.get("company") == orig_job.get("company")
+                            and job.get("title") == orig_job.get("title")
+                        ),
+                        None,
+                    )
 
-                # Match by company and title, falling back to index matching if needed
-                for i, orig_item in enumerate(original_exp):
-                    match_found = False
-                    for new_item in new_exp:
-                        if new_item.get("company", "") == orig_item.get("company", "") and new_item.get(
-                            "title", ""
-                        ) == orig_item.get("title", ""):
-                            orig_item["bullets"] = new_item.get("bullets", orig_item.get("bullets", []))
-                            match_found = True
-                            break
-                    if not match_found and i < len(new_exp):
-                        # Fallback: assume same order
-                        orig_item["bullets"] = new_exp[i].get("bullets", orig_item.get("bullets", []))
+                    if updated_job:
+                        merged_job = orig_job.copy()
+                        # Only update bullets to preserve dates and location
+                        if "bullets" in updated_job:
+                            merged_job["bullets"] = updated_job["bullets"]
+                        new_experiences.append(merged_job)
+                    else:
+                        new_experiences.append(orig_job.copy())
+
+                tailored_data["experience"] = new_experiences
+            elif "experience" in tailored_updates:
+                tailored_data["experience"] = tailored_updates["experience"]
 
             return tailored_data
 
@@ -108,12 +118,13 @@ class ResumeTailorer:
         return template.render(**sanitized_data)
 
     def _deep_sanitize(self, data: Any) -> Any:
-        """Recursively sanitize data for LaTeX."""
+        """Recursively sanitize values for LaTeX. Keys are left alone for template accessibility."""
         if isinstance(data, str):
             return self._sanitize_latex(data)
         elif isinstance(data, list):
             return [self._deep_sanitize(item) for item in data]
         elif isinstance(data, dict):
+            # Do NOT sanitize keys here, as it breaks Jinja2 variable matching (e.g. first_name -> first\_name)
             return {k: self._deep_sanitize(v) for k, v in data.items()}
         return data
 
@@ -138,13 +149,23 @@ class ResumeTailorer:
         try:
             logger.info(f"Compiling PDF to {output_path}...")
             # Run pdflatex twice for references/cross-links if needed
-            for _ in range(2):
-                subprocess.run(
+            for i in range(2):
+                result = subprocess.run(
                     ["pdflatex", "-interaction=nonstopmode", "-output-directory", str(temp_dir), str(tex_file)],
                     capture_output=True,
                     text=True,
-                    check=True,
+                    check=False,  # Don't check yet, we'll check manually
                 )
+                if result.returncode != 0:
+                    # On failure, pdflatex still writes to stdout/stderr
+                    logger.warning(f"pdflatex encountered issues (exit code {result.returncode}) on pass {i + 1}")
+                    if i == 1:  # Only throw on the second attempt to be persistent
+                        # Detailed error from log or stdout
+                        error_msg = result.stdout or result.stderr
+                        logger.error(f"pdflatex final compilation failed:\n{error_msg[-2000:]}")  # Log last 2000 chars
+                        raise subprocess.CalledProcessError(
+                            result.returncode, result.args, output=result.stdout, stderr=result.stderr
+                        )
 
             # Move result to final destination
             pdf_result = temp_dir / "resume.pdf"
@@ -157,8 +178,11 @@ class ResumeTailorer:
                 raise FileNotFoundError("pdflatex failed to produce a PDF.")
 
         except subprocess.CalledProcessError as e:
-            logger.error(f"pdflatex compilation failed: {e.stderr}")
-            raise RuntimeError(f"Failed to compile LaTeX: {e.stderr}")
+            # Try to extract the first error from stdout
+            stdout_lines = (e.output or "").split("\n")
+            first_error = next((line for line in stdout_lines if line.startswith("!")), "Unknown error")
+            logger.error(f"pdflatex compilation failed: {first_error}")
+            raise RuntimeError(f"pdflatex failed: {first_error}")
         finally:
             # Cleanup temp files (optional, keeping for debug for now or delete later)
             # In a production app, we should clean up.

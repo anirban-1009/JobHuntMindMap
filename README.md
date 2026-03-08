@@ -50,3 +50,8 @@ For advanced usage and automation, see the [Deployment Strategy](docs/DEPLOYMENT
 -   **Visualization**: Obsidian (Markdown + Canvas)
 -   **Data Sources**: LinkedIn (via automation/export)
 -   **Matching**: NLP/LLM for resume analysis
+
+
+## Checkout
+
+- https://x.com/AIPandaX/status/2025907777986867656
