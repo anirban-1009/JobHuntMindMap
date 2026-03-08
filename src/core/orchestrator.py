@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import yaml
-from colorama import Fore
 
 from src.core.ai import get_llm_client
 from src.core.analysis_service import AnalysisService
@@ -44,29 +43,29 @@ class MindMapApp:
     def _load_config(self) -> Dict[str, Any]:
         """Load and parse the YAML configuration file."""
         if not self.config_path.exists():
-            print(f"{Fore.RED}Config file not found: {self.config_path}")
+            logger.error(f"Config file not found: {self.config_path}")
             sys.exit(1)
         with open(self.config_path, "r", encoding="utf-8") as config_file:
             try:
                 return yaml.safe_load(config_file)
             except yaml.YAMLError as error:
-                print(f"{Fore.RED}Error parsing YAML: {error}")
+                logger.error(f"Error parsing YAML: {error}")
                 sys.exit(1)
 
     def check_env(self) -> None:
         """Check if the environment and configuration are valid."""
-        print(f"{Fore.CYAN}Checking environment...")
-        print(f"{Fore.GREEN}Config file valid.")
-        print(f"{Fore.GREEN}Mindmap is ready to run!")
+        logger.info("Checking environment...")
+        logger.info("Config file valid.")
+        logger.info("Mindmap is ready to run!")
 
     def login(self) -> None:
         """Launch browser for manual platform authentication."""
-        print(f"{Fore.CYAN}Starting browser for manual login...")
+        logger.info("Starting browser for manual login...")
         try:
             with BrowserManager(headless=False, session_path=self.session_path) as browser:
                 browser.login_manual()
         except Exception as error:
-            print(f"{Fore.RED}Login failed: {error}")
+            logger.error(f"Login failed: {error}")
             sys.exit(1)
 
     def _get_locations(self) -> List[str]:
@@ -78,7 +77,7 @@ class MindMapApp:
 
     def search(self, headless: bool) -> None:
         """Search for new job postings across defined keywords/locations."""
-        print(f"{Fore.CYAN}Starting job search (headless={headless})...")
+        logger.info(f"Starting job search (headless={headless})...")
         try:
             with BrowserManager(headless=headless, session_path=self.session_path) as browser:
                 searcher = JobSearcher(browser)
@@ -86,7 +85,7 @@ class MindMapApp:
                 all_results = []
                 for keywords in search_cfg.get("keywords", []):
                     for loc in self._get_locations():
-                        print(f"Searching for '{keywords}' in {loc}...")
+                        logger.info(f"Searching for '{keywords}' in {loc}...")
                         results = searcher.search(
                             keywords, loc, search_cfg.get("filters", {}), search_cfg.get("location_type", "Any")
                         )
@@ -95,7 +94,7 @@ class MindMapApp:
                 unique = {job.id: job for job in all_results if job.id}.values()
                 filtered = self._filter_jobs(list(unique))
 
-                print(f"{Fore.CYAN}\nTotal unique jobs found: {len(filtered)} (after filtering)")
+                logger.info(f"Total unique jobs found: {len(filtered)} (after filtering)")
 
             # Save search results to DB as discovery cache
             extractor = JobDetailsExtractor(browser, llm_client=self.llm)
@@ -113,9 +112,9 @@ class MindMapApp:
                 )
 
             for job in filtered[:10]:
-                print(f"- {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
+                logger.info(f"- {job.title} @ {job.company}")
         except Exception as error:
-            print(f"{Fore.RED}Search failed: {error}")
+            logger.error(f"Search failed: {error}")
             sys.exit(1)
 
     def scrape(
@@ -128,7 +127,7 @@ class MindMapApp:
         job_id: Optional[str] = None,
     ) -> None:
         """Extract full details for found jobs and cache them."""
-        print(f"{Fore.CYAN}Starting extraction (headless={headless})...")
+        logger.info(f"Starting extraction (headless={headless})...")
         try:
             with BrowserManager(headless=headless, session_path=self.session_path) as browser:
                 searcher = JobSearcher(browser)
@@ -212,43 +211,42 @@ class MindMapApp:
                     final_jobs = final_jobs[:limit]
 
                 if not final_jobs:
-                    print(f"{Fore.YELLOW}No jobs met the minimum fast score of {min_fast_score}.")
+                    logger.info(f"No jobs met the minimum fast score of {min_fast_score}.")
                     return
 
-                print(f"{Fore.CYAN}Extracting details for {len(final_jobs)} prioritized jobs...")
+                logger.info(f"Extracting details for {len(final_jobs)} prioritized jobs...")
                 # Only pass force to extraction, scoring handles its own force
                 details = extractor.extract_multiple_jobs(final_jobs, force=force)
-                print(f"{Fore.GREEN}Scraped {len(details)} / {len(final_jobs)} jobs.")
+                logger.info(f"Scraped {len(details)} / {len(final_jobs)} jobs.")
 
                 if do_score and details:
-                    print(f"{Fore.CYAN}Performing LLM scoring on scraped jobs...")
+                    logger.info("Performing LLM scoring on scraped jobs...")
                     resume_path = pathlib.Path(self.config.get("user", {}).get("resume_path", "data/resume.pdf"))
                     resume_text = PDFResumeParser().extract_text(resume_path)
                     for job in details:
                         # Skip if already scored, unless force is used
                         res = self.analysis_service.score_job(job, resume_text, force=force)
                         if res:
-                            color = Fore.GREEN if res.score >= 70 else Fore.YELLOW
-                            print(f"[{job.id}] {color}Score {res.score}{Fore.RESET} - {job.title} @ {job.company}")
+                            logger.info(f"[{job.id}] Score {res.score} - {job.title} @ {job.company}")
 
         except Exception as error:
-            print(f"{Fore.RED}Scrape failed: {error}")
+            logger.error(f"Scrape failed: {error}")
             sys.exit(1)
 
     def refresh_existing_jobs(
         self, headless: bool, limit: Optional[int], do_score: bool = False, unknown_only: bool = False
     ) -> None:
         """Re-scrape details for jobs already present in the database."""
-        print(f"{Fore.CYAN}Refreshing existing records (headless={headless})...")
+        logger.info(f"Refreshing existing records (headless={headless})...")
         try:
             extractor = JobDetailsExtractor(None)
             if not extractor.db:
-                print(f"{Fore.RED}Database not available.")
+                logger.error("Database not available.")
                 return
 
             all_jobs = extractor.db.get_all_jobs(limit=1000)
             if not all_jobs:
-                print(f"{Fore.YELLOW}No jobs found in database to refresh.")
+                logger.info("No jobs found in database to refresh.")
                 return
 
             if unknown_only:
@@ -261,29 +259,29 @@ class MindMapApp:
                     or not j.get("company")
                 ]
                 if not all_jobs:
-                    print(f"{Fore.YELLOW}No unknown jobs found to refresh.")
+                    logger.info("No unknown jobs found to refresh.")
                     return
 
             if limit:
                 all_jobs = all_jobs[:limit]
 
-            print(f"{Fore.WHITE}Found {len(all_jobs)} jobs to refresh.")
+            logger.info(f"Found {len(all_jobs)} jobs to refresh.")
 
             with BrowserManager(headless=headless, session_path=self.session_path) as browser:
                 extractor.browser = browser
                 extractor.llm = self.llm
 
                 details = extractor.extract_multiple_jobs(all_jobs, force=True)
-                print(f"{Fore.GREEN}Successfully refreshed {len(details)} / {len(all_jobs)} jobs.")
+                logger.info(f"Successfully refreshed {len(details)} / {len(all_jobs)} jobs.")
 
                 if do_score and details:
-                    print(f"{Fore.CYAN}Performing LLM re-scoring...")
+                    logger.info("Performing LLM re-scoring...")
                     resume_path = pathlib.Path(self.config.get("user", {}).get("resume_path", "data/resume.pdf"))
                     resume_text = PDFResumeParser().extract_text(resume_path)
                     for job in details:
                         self.analysis_service.score_job(job, resume_text)
         except Exception as error:
-            print(f"{Fore.RED}Refresh failed: {error}")
+            logger.error(f"Refresh failed: {error}")
             sys.exit(1)
 
     def score_jobs(self, score_all: bool, job_id: Optional[str]) -> None:
@@ -295,38 +293,36 @@ class MindMapApp:
             if job_id:
                 job = JobDetailsExtractor(None).get_cached_job(job_id)
                 if job:
-                    print(f"{Fore.CYAN}Scoring job '{job.title}' at '{job.company}'...")
+                    logger.info(f"Scoring job '{job.title}' at '{job.company}'...")
                     res = self.analysis_service.score_job(job, resume_text, force=True)
                     if res:
-                        color = Fore.GREEN if res.score >= 70 else Fore.YELLOW
-                        print(f"Job {job_id}: {color}Score {res.score}{Fore.RESET}")
-                        print(f"{Fore.WHITE}{res.reasoning}")
+                        logger.info(f"Job {job_id}: Score {res.score}")
+                        logger.info(f"{res.reasoning}")
                 else:
-                    print(f"{Fore.RED}Job ID {job_id} not found in database cache. Run 'scrape' first.")
+                    logger.error(f"Job ID {job_id} not found in database cache. Run 'scrape' first.")
             elif score_all:
-                print(f"{Fore.CYAN}Scoring all cached jobs against resume...")
+                logger.info("Scoring all cached jobs against resume...")
                 results = self.analysis_service.score_all_cached_jobs(resume_text)
                 if not results:
-                    print(f"{Fore.YELLOW}No jobs found in database to score. Run 'search' or 'scrape' first.")
+                    logger.warning("No jobs found in database to score. Run 'search' or 'scrape' first.")
                 else:
-                    print(f"{Fore.GREEN}Finished scoring {len(results)} jobs.")
+                    logger.info(f"Finished scoring {len(results)} jobs.")
                     for job, res in results:
-                        color = Fore.GREEN if res.score >= 70 else Fore.YELLOW
-                        print(f"[{job.id}] {color}Score {res.score}{Fore.RESET} - {job.title} @ {job.company}")
+                        logger.info(f"[{job.id}] Score {res.score} - {job.title} @ {job.company}")
         except Exception as error:
-            print(f"{Fore.RED}Scoring failed: {error}")
+            logger.error(f"Scoring failed: {error}")
             sys.exit(1)
 
     def analyze_gaps(self, min_score: int, tag: Optional[str] = None) -> None:
         """Identify missing skills across highly-rated job postings."""
         filter_msg = f" (tag: {tag})" if tag else ""
-        print(f"{Fore.CYAN}Analyzing gaps across jobs scored >= {min_score}{filter_msg}...")
+        logger.info(f"Analyzing gaps across jobs scored >= {min_score}{filter_msg}...")
         report = self.analysis_service.run_gap_analysis(min_score, tag=tag)
         if report:
-            print(f"{Fore.GREEN}\n=== Top Missing Skills ===")
+            logger.info("\n=== Top Missing Skills ===")
             for skill, count in report.skill_frequency.items():
-                print(f"- {skill}: {count} jobs")
-            print(f"{Fore.CYAN}\n=== Improvement Plan ===\n{report.improvement_plan}")
+                logger.info(f"- {skill}: {count} jobs")
+            logger.info(f"\n=== Improvement Plan ===\n{report.improvement_plan}")
 
             # Also Sync to Obsidian
             from src.generator.sync_service import SyncService
@@ -335,16 +331,14 @@ class MindMapApp:
             content = sync.template_manager.render_gap_analysis(report, min_score, tag)
             filename = f"Gap Analysis - {tag if tag else 'All'}.md"
             file_path = sync.vault_manager.write_file(content, filename, "analysis")
-            print(f"{Fore.GREEN}\nGap analysis report saved to Obsidian: {file_path}")
+            logger.info(f"Gap analysis report saved to Obsidian: {file_path}")
         else:
-            print(f"{Fore.YELLOW}No jobs found with a score of {min_score} or higher{filter_msg}.")
-            print(
-                f"{Fore.WHITE}Try running '{Fore.CYAN}uv run mindmap score --all{Fore.WHITE}' first, or lowering the threshold."
-            )
+            logger.warning(f"No jobs found with a score of {min_score} or higher{filter_msg}.")
+            logger.info("Try running 'uv run mindmap score --all' first, or lowering the threshold.")
 
     def notify(self, min_score: int) -> None:
         """Send job digest emails for jobs meeting the score threshold."""
-        print(f"{Fore.CYAN}Preparing notifications...")
+        logger.info("Preparing notifications...")
         extractor = JobDetailsExtractor(None)
         if not extractor.db:
             return
@@ -362,25 +356,25 @@ class MindMapApp:
 
         if scored_jobs:
             EmailService(self.config).send_job_digest(scored_jobs)
-            print(f"{Fore.GREEN}Notifications sent.")
+            logger.info("Notifications sent.")
 
     def sync(self) -> None:
         """Export processed job data to external knowledge base."""
-        print(f"{Fore.CYAN}Syncing to Obsidian...")
+        logger.info("Syncing to Obsidian...")
         SyncService(self.config, llm_client=self.llm).sync()
-        print(f"{Fore.GREEN}Sync complete.")
+        logger.info("Sync complete.")
 
     def sync_back(self) -> None:
         """Sync status and changes from Obsidian back to the database."""
-        print(f"{Fore.CYAN}Syncing back from Obsidian...")
+        logger.info("Syncing back from Obsidian...")
         SyncService(self.config, llm_client=self.llm).sync_from_obsidian()
-        print(f"{Fore.GREEN}Sync-back complete.")
+        logger.info("Sync-back complete.")
 
     def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 300) -> Optional[Dict[str, str]]:
         """Generate personalized referral message for a job and contact."""
         job = JobDetailsExtractor(None).get_cached_job(job_id)
         if not job:
-            print(f"{Fore.RED}Job {job_id} not found.")
+            logger.error(f"Job {job_id} not found.")
             return
 
         matches = self.referral_service.find_potential_connections(job)
@@ -389,14 +383,14 @@ class MindMapApp:
             target = SimpleNamespace(full_name=connection_name, position="Professional")
         elif matches:
             target = matches[0]
-            print(f"{Fore.GREEN}Using existing connection: {target.full_name}")
+            logger.info(f"Using existing connection: {target.full_name}")
 
         # Handled manual input in CLI side or here?
         # If we keep this class as the core, it might need to return a "needs_input" status
         # but for this specific tool, let's allow input in the Orchestrator for simplicity
         # if it's strictly a CLI tool.
         if not target:
-            print(f"{Fore.YELLOW}No connections found.")
+            logger.warning("No connections found.")
             return None  # Signal to CLI that it needs input
 
         resume_data = self.resume_service.get_resume_data()
@@ -413,7 +407,7 @@ class MindMapApp:
         resume_data = self.resume_service.get_resume_data()
         tailorer = ResumeTailorer(self.config)
 
-        print(f"{Fore.CYAN}Tailoring for {job.title} at {job.company}...")
+        logger.info(f"Tailoring for {job.title} at {job.company}...")
         job_desc = f"Title: {job.title}\nCompany: {job.company}\n\n{job.description}"
         tailored_data = tailorer.tailor_resume(resume_data, job_desc)
 
@@ -433,16 +427,16 @@ class MindMapApp:
         """Test AI client connectivity with a simple prompt."""
         ai_cfg = self.config.get("ai", {})
         provider = ai_cfg.get("provider", "gemini")
-        print(f"{Fore.CYAN}Initializing {provider} client and sending test prompt...")
+        logger.info(f"Initializing {provider} client and sending test prompt...")
         try:
             response = self.llm.generate(prompt)
             if response:
-                print(f"{Fore.GREEN}\nAI Response ({provider}):")
-                print(f"{Fore.WHITE}{response.strip()}")
+                logger.info(f"\nAI Response ({provider}):")
+                logger.info(f"{response.strip()}")
             else:
-                print(f"{Fore.RED}\nAI returned empty response. Check API key/Ollama.")
+                logger.error("AI returned empty response. Check API key/Ollama.")
         except Exception as error:
-            print(f"{Fore.RED}\nAI Check failed: {error}")
+            logger.error(f"AI Check failed: {error}")
             sys.exit(1)
 
     def find_network(self, job_id: str) -> None:
@@ -450,21 +444,21 @@ class MindMapApp:
         extractor = JobDetailsExtractor(None)
         job = extractor.get_cached_job(job_id)
         if not job:
-            print(f"{Fore.RED}Job {job_id} not found.")
+            logger.error(f"Job {job_id} not found.")
             return
 
         matches = self.referral_service.find_potential_connections(job)
-        print(f"{Fore.CYAN}\nFound {len(matches)} connections at {job.company}:")
+        logger.info(f"Found {len(matches)} connections at {job.company}:")
         for conn in matches:
-            print(f"- {Fore.WHITE}{conn.full_name} {Fore.YELLOW}({conn.position})")
+            logger.info(f"- {conn.full_name} ({conn.position})")
 
     def map_all_networks(self) -> None:
         """Map professional connections to all cached jobs."""
-        print(f"{Fore.CYAN}Mapping connections across all available jobs...")
+        logger.info("Mapping connections across all available jobs...")
 
         extractor = JobDetailsExtractor(None)
         if not extractor.db:
-            print(f"{Fore.RED}Database not available.")
+            logger.error("Database not available.")
             return
 
         all_jobs_data = extractor.db.get_all_jobs(limit=1000)
@@ -480,13 +474,13 @@ class MindMapApp:
             if matches:
                 jobs_with_connections += 1
                 total_connections += len(matches)
-                print(f"\n{Fore.GREEN}[{job.id}] {Fore.WHITE}{job.title} {Fore.YELLOW}@ {job.company}")
+                logger.info(f"[{job.id}] {job.title} @ {job.company}")
                 for conn in matches:
-                    print(f"  - {Fore.CYAN}{conn.full_name} {Fore.WHITE}({conn.position})")
+                    logger.info(f"  - {conn.full_name} ({conn.position})")
 
-        print(f"\n{Fore.CYAN}{'=' * 40}")
-        print(f"{Fore.GREEN}Summary: Found {total_connections} connections across {jobs_with_connections} jobs.")
-        print(f"{Fore.CYAN}{'=' * 40}")
+        logger.info(f"\n{'=' * 40}")
+        logger.info(f"Summary: Found {total_connections} connections across {jobs_with_connections} jobs.")
+        logger.info(f"{'=' * 40}")
 
     def prune(self) -> None:
         """Prune orphaned records from Obsidian."""
