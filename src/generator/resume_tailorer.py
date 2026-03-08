@@ -52,7 +52,6 @@ class ResumeTailorer:
         response = self.llm.generate(prompt)
 
         # Parse the LLM response. We expect JSON for structured updates.
-        # This is a placeholder for actual parsing logic.
         try:
             import json
 

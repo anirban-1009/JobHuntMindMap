@@ -1,3 +1,4 @@
+import contextlib
 import json
 import sqlite3
 from pathlib import Path
@@ -65,7 +66,8 @@ class DatabaseManager:
         """
 
         try:
-            with self._get_connection() as conn:
+            conn = self._get_connection()
+            try:
                 conn.execute(create_jobs_table)
 
                 # Create requests table
@@ -96,6 +98,8 @@ class DatabaseManager:
 
                 conn.execute(create_trigger)
                 conn.commit()
+            finally:
+                conn.close()
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
             raise
@@ -173,9 +177,9 @@ class DatabaseManager:
         )
 
         try:
-            with self._get_connection() as conn:
-                conn.execute(query, params)
-                conn.commit()
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute(query, params)
         except Exception as e:
             logger.error(f"Failed to save job {job_data.get('id')}: {e}")
             raise
@@ -184,7 +188,7 @@ class DatabaseManager:
         """Retrieves a job by ID."""
         query = "SELECT * FROM jobs WHERE id = ?"
         try:
-            with self._get_connection() as conn:
+            with contextlib.closing(self._get_connection()) as conn:
                 cursor = conn.execute(query, (job_id,))
                 row = cursor.fetchone()
                 if row:
@@ -198,7 +202,7 @@ class DatabaseManager:
         """Retrieves all jobs with pagination."""
         query = "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?"
         try:
-            with self._get_connection() as conn:
+            with contextlib.closing(self._get_connection()) as conn:
                 cursor = conn.execute(query, (limit, offset))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
@@ -209,7 +213,7 @@ class DatabaseManager:
         """Retrieves jobs filtered by status."""
         query = "SELECT * FROM jobs WHERE status = ?"
         try:
-            with self._get_connection() as conn:
+            with contextlib.closing(self._get_connection()) as conn:
                 cursor = conn.execute(query, (status,))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
@@ -220,7 +224,7 @@ class DatabaseManager:
         """Checks if a job exists in the database."""
         query = "SELECT 1 FROM jobs WHERE id = ?"
         try:
-            with self._get_connection() as conn:
+            with contextlib.closing(self._get_connection()) as conn:
                 cursor = conn.execute(query, (job_id,))
                 return cursor.fetchone() is not None
         except Exception as e:
@@ -234,9 +238,9 @@ class DatabaseManager:
         VALUES (?, ?, ?, ?)
         """
         try:
-            with self._get_connection() as conn:
-                conn.execute(query, (job_id, connection_name, profile_url, message))
-                conn.commit()
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute(query, (job_id, connection_name, profile_url, message))
         except Exception as e:
             logger.error(f"Failed to save request for job {job_id}: {e}")
             raise
@@ -245,7 +249,7 @@ class DatabaseManager:
         """Retrieves requests for a specific job."""
         query = "SELECT * FROM requests WHERE job_id = ?"
         try:
-            with self._get_connection() as conn:
+            with contextlib.closing(self._get_connection()) as conn:
                 cursor = conn.execute(query, (job_id,))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
@@ -256,7 +260,7 @@ class DatabaseManager:
         """Retrieves all referral requests."""
         query = "SELECT * FROM requests"
         try:
-            with self._get_connection() as conn:
+            with contextlib.closing(self._get_connection()) as conn:
                 cursor = conn.execute(query)
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
@@ -267,9 +271,9 @@ class DatabaseManager:
         """Updates a job with analysis results."""
         query = "UPDATE jobs SET relevance_score = ?, analysis_data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         try:
-            with self._get_connection() as conn:
-                conn.execute(query, (score, analysis_data, job_id))
-                conn.commit()
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute(query, (score, analysis_data, job_id))
                 logger.info(f"Saved analysis for job {job_id}.")
         except Exception as e:
             logger.error(f"Failed to save analysis for job {job_id}: {e}")
@@ -279,9 +283,9 @@ class DatabaseManager:
         """Updates the status of a job."""
         query = "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         try:
-            with self._get_connection() as conn:
-                conn.execute(query, (status, job_id))
-                conn.commit()
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute(query, (status, job_id))
                 logger.info(f"Updated status for job {job_id} to {status}.")
         except Exception as e:
             logger.error(f"Failed to update status for job {job_id}: {e}")
@@ -291,9 +295,21 @@ class DatabaseManager:
         """Retrieves all jobs that have analysis data."""
         query = "SELECT id, relevance_score, analysis_data FROM jobs WHERE analysis_data IS NOT NULL AND relevance_score >= ?"
         try:
-            with self._get_connection() as conn:
+            with contextlib.closing(self._get_connection()) as conn:
                 cursor = conn.execute(query, (min_score,))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Failed to get analyses: {e}")
             return []
+
+    def delete_job(self, job_id: str):
+        """Deletes a job and its associated requests from the database."""
+        try:
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute("DELETE FROM requests WHERE job_id = ?", (job_id,))
+                    conn.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+                logger.info(f"Deleted job {job_id} and its associated requests.")
+        except Exception as e:
+            logger.error(f"Failed to delete job {job_id}: {e}")
+            raise

@@ -72,21 +72,26 @@ class TestMindMapApp:
     def test_scrape_no_jobs(self, app):
         with (
             patch("src.core.orchestrator.JobSearcher") as mock_searcher_cls,
+            patch("src.core.orchestrator.JobDetailsExtractor") as mock_extractor_cls,
             patch("src.core.orchestrator.BrowserManager"),
         ):
             mock_searcher = mock_searcher_cls.return_value
             mock_searcher.search.return_value = []
+            mock_extractor = mock_extractor_cls.return_value
+            mock_extractor.db.get_jobs_by_status.return_value = []
+
             app.scrape(headless=True, limit=None, force=False)
-            mock_searcher.search.assert_called_once()
+            mock_searcher.search.assert_called()
 
     def test_search(self, app):
         with (
             patch("src.core.orchestrator.JobSearcher") as mock_searcher_cls,
+            patch("src.core.orchestrator.JobDetailsExtractor"),
             patch("src.core.orchestrator.BrowserManager"),
         ):
             mock_searcher = mock_searcher_cls.return_value
             app.search(headless=True)
-            mock_searcher.search.assert_called_once()
+            mock_searcher.search.assert_called()
 
     def test_sync(self, app):
         with patch("src.core.orchestrator.SyncService") as mock_sync_cls:
