@@ -35,16 +35,47 @@ class RelevanceScorer:
         self.llm = llm_client
         self.user_experience_years = user_experience_years
 
-    def _extract_experience_regex(self, text: Optional[str]) -> Optional[int]:
-        """Attempt to extract required years of experience using regex."""
+    def _extract_experience_regex(self, text: Optional[str]) -> tuple[Optional[int], bool]:
+        """
+        Attempt to extract required years of experience using regex.
+
+        Returns a tuple of (years, is_plus_syntax) where:
+        - years: The extracted requirement (upper bound for ranges), or None
+        - is_plus_syntax: True if the requirement was specified as "X+ years"
+
+        For ranges like "3-5 years", returns (5, False) as a conservative estimate.
+        For "5+ years", returns (5, True).
+        Returns (None, False) for phrases like "equivalent experience" where no
+        specific years are stated.
+        """
         if not text:
-            return None
-        # matches: "5+ years", "3-5 years", "2 yrs" followed optionally by "of experience"
-        pattern = r"(\d{1,2})(?:\s*\+)?\s*(?:to\s*\d{1,2}\s*)?(?:-\s*\d{1,2}\s*)?(?:years?|yrs?)\s*(?:of\s*)?(?:[\w\s]{0,20})?(?:experience|exp)"
+            return None, False
+
+        # First check for "equivalent experience" or similar - these should NOT
+        # trigger rejection as they don't specify a concrete year requirement
+        equivalent_pattern = r"\bequivalent\b.*\bexperience\b|\bexperience\b.*\bequivalent\b|\bor\b\s+equivalent\b"
+        if re.search(equivalent_pattern, text, re.IGNORECASE):
+            return None, False
+
+        # Pattern captures: primary number, optional + indicator, optional range upper
+        pattern = r"(\d{1,2})(\+)?\s*(?:(?:to|-)\s*(\d{1,2}))?\s*(?:years?|yrs?)\s*(?:of\s*)?(?:[\w\s]{0,20})?(?:experience|exp)"
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            return int(match.group(1))
-        return None
+            primary = int(match.group(1))
+            has_plus = match.group(2) is not None
+            upper = match.group(3)
+            if upper is not None:
+                # For ranges like "3-5 years", use the upper bound as conservative estimate
+                return int(upper), False
+            return primary, has_plus
+
+        # Fallback: check for just a number followed by years/exp at end (no "experience" keyword)
+        simple_pattern = r"(\d{1,2})(\+)?\s*(?:years?|yrs?)\b"
+        simple_match = re.search(simple_pattern, text, re.IGNORECASE)
+        if simple_match:
+            return int(simple_match.group(1)), simple_match.group(2) is not None
+
+        return None, False
 
     def score_job(self, resume_text: str, job_details: JobDetails) -> Optional[ScoringResult]:
         """
@@ -57,19 +88,33 @@ class RelevanceScorer:
         Returns:
             ScoringResult if successful, None otherwise.
         """
-        extracted_exp = self._extract_experience_regex(job_details.description)
+        extracted_exp, is_plus_syntax = self._extract_experience_regex(job_details.description)
 
         # 1. Regex pre-filtering for experience
         if extracted_exp is not None and self.user_experience_years is not None:
-            if extracted_exp > self.user_experience_years:
+            if is_plus_syntax:
+                # "5+ years" means strictly more than 5, so candidate needs > 5 years
+                if self.user_experience_years <= extracted_exp:
+                    logger.info(
+                        f"Regex filter caught job '{job_details.title}': requires {extracted_exp}+ years, candidate has {self.user_experience_years}."
+                    )
+                    return ScoringResult(
+                        score=0,
+                        matching_skills=[],
+                        missing_skills=["Required Experience"],
+                        reasoning=f"Regex filter: Job requires {extracted_exp}+ years of experience, but candidate has a maximum of {self.user_experience_years} years.",
+                        required_experience_years=extracted_exp,
+                    )
+            elif extracted_exp > self.user_experience_years:
+                # For ranges like "3-5 years", upper bound > candidate experience
                 logger.info(
-                    f"Regex filter caught job '{job_details.title}': strictly requires {extracted_exp} years, candidate has {self.user_experience_years}."
+                    f"Regex filter caught job '{job_details.title}': requires {extracted_exp} years, candidate has {self.user_experience_years}."
                 )
                 return ScoringResult(
                     score=0,
                     matching_skills=[],
                     missing_skills=["Required Experience"],
-                    reasoning=f"Regex filter: Job requires {extracted_exp}+ years of experience, but candidate has a maximum of {self.user_experience_years} years.",
+                    reasoning=f"Regex filter: Job requires {extracted_exp} years of experience, but candidate has a maximum of {self.user_experience_years} years.",
                     required_experience_years=extracted_exp,
                 )
 

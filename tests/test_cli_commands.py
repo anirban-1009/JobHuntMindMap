@@ -20,7 +20,7 @@ def clean_data_env() -> Generator[None, None, None]:
     def _cleanup():
         if data_dir.exists():
             for item in data_dir.iterdir():
-                if item.name == ".gitkeep" or item.name.lower() == "connections.csv":
+                if item.name == ".gitkeep" or item.name.lower() in ["connections.csv", "resume.json"]:
                     continue
                 if item.is_dir():
                     shutil.rmtree(item)
@@ -118,6 +118,8 @@ class TestCLIJobIngestion:
         mock_searcher = mock_searcher_class.return_value
         mock_searcher.search.return_value = [MagicMock(id="1", title="Job 1", company="Co 1", location="Loc 1")]
         mock_browser_manager_class.return_value.__enter__.return_value = MagicMock()
+        mock_extractor = mock_extractor_class.return_value
+        mock_extractor.db.job_exists.return_value = False
 
         result = runner.invoke(cli, ["search", "--config", str(mock_config), "--headless"])
         assert result.exit_code == 0
@@ -142,6 +144,8 @@ class TestCLIJobIngestion:
         mock_searcher.search.return_value = [MagicMock(id="1", title="Job 1", company="Co 1")]
         mock_extractor = mock_extractor_class.return_value
         mock_extractor.extract_multiple_jobs.return_value = [MagicMock(title="Job 1", company="Co 1", link="url")]
+        mock_extractor.db.job_exists.return_value = False
+        mock_extractor.db.get_jobs_by_status.return_value = []
         mock_browser_manager_class.return_value.__enter__.return_value = MagicMock()
 
         result = runner.invoke(cli, ["scrape", "--config", str(mock_config), "--limit", "1"])

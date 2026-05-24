@@ -33,9 +33,10 @@ def login(config):
 @cli.command()
 @click.option("--config", default="config.yaml", help="Path to config file")
 @click.option("--headless", is_flag=True, default=False, help="Run in headless mode")
-def search(config, headless):
+@click.option("--external-only", is_flag=True, default=False, help="Only run on external sites")
+def search(config, headless, external_only):
     """Search for jobs based on configuration."""
-    MindMapApp(config).search(headless)
+    MindMapApp(config).search(headless, external_only=external_only)
 
 
 @cli.command()
@@ -45,10 +46,11 @@ def search(config, headless):
 @click.option("--force", is_flag=True, default=False, help="Force re-scrape")
 @click.option("--min-fast-score", type=int, default=0, help="Minimum initial NLP score (0-100)")
 @click.option("--score", is_flag=True, default=False, help="Perform LLM scoring after scraping")
+@click.option("--external-only", is_flag=True, default=False, help="Only run on external sites (skip LinkedIn)")
 @click.argument("job_id", required=False)
-def scrape(config, headless, limit, force, min_fast_score, score, job_id):
+def scrape(config, headless, limit, force, min_fast_score, score, external_only, job_id):
     """Scrape details for found jobs (or a specific job ID)."""
-    MindMapApp(config).scrape(headless, limit, force, min_fast_score, score, job_id)
+    MindMapApp(config).scrape(headless, limit, force, min_fast_score, score, external_only, job_id)
 
 
 @cli.command()

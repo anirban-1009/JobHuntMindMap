@@ -190,6 +190,13 @@ class JobDetailsExtractor:
                 logger.info(f"Using cached details for job {job_id}")
                 return cached
 
+        # Try to pull company from fallback early to attach to placeholder models
+        company_name_fallback = "Unknown Company"
+        if fallback_data:
+            company_name_fallback = getattr(fallback_data, "company", None)
+            if company_name_fallback is None and isinstance(fallback_data, dict):
+                company_name_fallback = fallback_data.get("company", "Unknown Company")
+
         logger.info(f"Extracting details for job {job_id}: {job_url}")
         try:
             self.browser.goto(job_url)
@@ -202,6 +209,35 @@ class JobDetailsExtractor:
         page = self.browser.page
 
         try:
+            # Short-circuit for external sites
+            if job_id.startswith("ext-"):
+                time.sleep(2.0)
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                time.sleep(2.0)
+                logger.info(f"Extracting external job {job_id} using LLM...")
+                page_text = page.inner_text("body")
+                job_details = self._extract_from_page_text(
+                    JobDetails(job_id, "", company_name_fallback, "", "", "", "", "", "", "", job_url),
+                    page_text[:15000],
+                )
+                if fallback_data:
+
+                    def get_data(field):
+                        val = getattr(fallback_data, field, None)
+                        if val is None and isinstance(fallback_data, dict):
+                            val = fallback_data.get(field)
+                        return val or ""
+
+                    if not job_details.title or job_details.title == "Unknown Title":
+                        job_details.title = get_data("title") or "Unknown Title"
+
+                if job_details.title != "Unknown Title" or job_details.id:
+                    self._save_to_cache(job_details)
+                    return job_details
+                else:
+                    logger.warning(f"Extracted completely empty details for external job {job_id}")
+                    return None
+
             # Wait for any of the main job page elements to appear (shorter timeout)
             # We wait for the most common success selector
             try:
@@ -345,7 +381,7 @@ class JobDetailsExtractor:
         logger.info(f"Using LLM fallback extraction for job {job.id}...")
 
         prompt = f"""
-        Extract job details from the following LinkedIn page text. 
+        Extract job details from the following web page text. 
         Focus on the Title, Company, Location, Description, Salary, and Seniority.
 
         Page Text:
