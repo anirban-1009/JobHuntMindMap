@@ -57,7 +57,9 @@ class ReferralService:
 
         # 2. Extract Experience info
         experience_list = resume_data.get("experience", [])
-        total_exp_years = resume_data.get("total_experience_years", len(experience_list) * 2)
+        total_exp_years = self.config.get("user", {}).get("total_experience_years") or resume_data.get(
+            "total_experience_years", len(experience_list) * 2
+        )
         current_role = resume_data.get("job_title", "Software Engineer")
 
         if experience_list and not resume_data.get("job_title"):

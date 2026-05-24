@@ -111,6 +111,8 @@ class TestMainCLI:
         mock_result.company = "Test Co"
         mock_result.location = "Remote"
         mock_searcher.search.return_value = [mock_result]
+        mock_extractor = mock_extractor_class.return_value
+        mock_extractor.db.job_exists.return_value = False
 
         result = runner.invoke(search, ["--config", mock_config])
 
@@ -145,6 +147,8 @@ class TestMainCLI:
         mock_job_details.company = "Scraped Co"
         mock_job_details.link = "http://example.com"
         mock_extractor.extract_multiple_jobs.return_value = [mock_job_details]
+        mock_extractor.db.job_exists.return_value = False
+        mock_extractor.db.get_jobs_by_status.return_value = []
 
         result = runner.invoke(scrape, ["--config", mock_config])
 

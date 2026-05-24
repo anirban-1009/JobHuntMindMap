@@ -37,8 +37,16 @@ class MindMapApp:
 
         # Service Initialization
         self.resume_service = ResumeService(self.llm, resume_path=self.config.get("user", {}).get("resume_path"))
-        self.analysis_service = AnalysisService(self.llm)
         self.referral_service = ReferralService(self.llm, self.config)
+
+        # Extract candidate experience for scoring
+        resume_data = self.resume_service.get_resume_data()
+        user_experience_years = self.config.get("user", {}).get("total_experience_years") or resume_data.get(
+            "total_experience_years"
+        )
+        if user_experience_years:
+            logger.info(f"Candidate experience: {user_experience_years} years")
+        self.analysis_service = AnalysisService(self.llm, user_experience_years=user_experience_years)
 
     def _load_config(self) -> Dict[str, Any]:
         """Load and parse the YAML configuration file."""
@@ -75,29 +83,68 @@ class MindMapApp:
             return [location.strip() for location in loc_cfg.split(",") if location.strip()]
         return loc_cfg
 
-    def search(self, headless: bool) -> None:
+    def _run_searches(self, browser: Any, external_only: bool = False, db: Optional[Any] = None) -> List[Any]:
+        """Execute searches across configured platforms and external sites."""
+        search_cfg = self.config.get("search", {})
+        all_results = []
+
+        searcher = JobSearcher(browser)
+        seen_searches = set()
+
+        # 1. LinkedIn Search
+        if not external_only:
+            for kw in search_cfg.get("keywords", []):
+                for loc in self._get_locations():
+                    search_key = f"{kw}|{loc}"
+                    if search_key in seen_searches:
+                        continue
+                    logger.info(f"Searching for '{kw}' in {loc}...")
+                    results = searcher.search(
+                        kw, loc, search_cfg.get("filters", {}), search_cfg.get("location_type", "Any")
+                    )
+                    all_results.extend(results)
+                    seen_searches.add(search_key)
+                    if len(results) >= 15:
+                        logger.debug(f"Found {len(results)} jobs for '{kw}', skipping locations.")
+                        break
+
+        # 2. External Career Sites
+        external_sites = search_cfg.get("external_sites", [])
+        if external_sites:
+            from src.ingest.external_searcher import ExternalSiteSearcher
+
+            ext_searcher = ExternalSiteSearcher(browser, self.llm)
+            for site in external_sites:
+                try:
+                    url = site.get("url") if isinstance(site, dict) else site
+                    company = site.get("company", "Unknown") if isinstance(site, dict) else "Unknown"
+                    if url:
+                        all_results.extend(ext_searcher.search_site(url, company_name=company))
+                except Exception as e:
+                    logger.error(f"Error searching external site {site}: {e}")
+
+        unique = list({job.id: job for job in all_results if job.id}.values())
+
+        # Filter out jobs already in cache
+        if db:
+            before_count = len(unique)
+            unique = [j for j in unique if not db.job_exists(j.id)]
+            if len(unique) < before_count:
+                logger.info(f"Skipped {before_count - len(unique)} jobs already in cache.")
+
+        return self._filter_jobs(unique)
+
+    def search(self, headless: bool, external_only: bool = False) -> None:
         """Search for new job postings across defined keywords/locations."""
-        logger.info(f"Starting job search (headless={headless})...")
+        logger.info(f"Starting job search (headless={headless}, external_only={external_only})...")
         try:
             with BrowserManager(headless=headless, session_path=self.session_path) as browser:
-                searcher = JobSearcher(browser)
-                search_cfg = self.config.get("search", {})
-                all_results = []
-                for keywords in search_cfg.get("keywords", []):
-                    for loc in self._get_locations():
-                        logger.info(f"Searching for '{keywords}' in {loc}...")
-                        results = searcher.search(
-                            keywords, loc, search_cfg.get("filters", {}), search_cfg.get("location_type", "Any")
-                        )
-                        all_results.extend(results)
-
-                unique = {job.id: job for job in all_results if job.id}.values()
-                filtered = self._filter_jobs(list(unique))
+                extractor = JobDetailsExtractor(browser, llm_client=self.llm)
+                filtered = self._run_searches(browser, external_only=external_only, db=extractor.db)
 
                 logger.info(f"Total unique jobs found: {len(filtered)} (after filtering)")
 
             # Save search results to DB as discovery cache
-            extractor = JobDetailsExtractor(browser, llm_client=self.llm)
             for job in filtered:
                 # We save minimal info; status 'discovered' means JD not yet scraped
                 extractor.db.save_job(
@@ -124,13 +171,13 @@ class MindMapApp:
         force: bool,
         min_fast_score: int = 0,
         do_score: bool = False,
+        external_only: bool = False,
         job_id: Optional[str] = None,
     ) -> None:
         """Extract full details for found jobs and cache them."""
-        logger.info(f"Starting extraction (headless={headless})...")
+        logger.info(f"Starting extraction (headless={headless}, external_only={external_only})...")
         try:
             with BrowserManager(headless=headless, session_path=self.session_path) as browser:
-                searcher = JobSearcher(browser)
                 extractor = JobDetailsExtractor(browser, llm_client=self.llm)
 
                 if job_id:
@@ -142,38 +189,18 @@ class MindMapApp:
                     dummy_job = SimpleNamespace(id=job_id, link=dummy_link, title=f"Job {job_id}")
                     filtered = [dummy_job]
                 else:
-                    # Run full search
-                    all_found = []
-                    cfg = self.config.get("search", {})
-                    seen_searches = set()
-
-                    for kw in cfg.get("keywords", []):
-                        for loc in self._get_locations():
-                            search_key = f"{kw}|{loc}"
-                            if search_key in seen_searches:
-                                continue
-
-                            results = searcher.search(kw, loc, cfg.get("filters", {}), cfg.get("location_type", "Any"))
-                            all_found.extend(results)
-                            seen_searches.add(search_key)
-
-                            # Optimization: if we found many jobs in this location for this keyword,
-                            # maybe we don't need to search sub-locations?
-                            # (Optional: stop after first location if results > 15)
-                            if len(results) >= 15:
-                                logger.debug(
-                                    f"Found {len(results)} jobs for '{kw}' in '{loc}', skipping other locations for this keyword."
-                                )
-                                break
-
-                    unique = list({job.id: job for job in all_found if job.id}.values())
-                    filtered = self._filter_jobs(unique)
+                    # Run full search across platforms, filtering out already-cached jobs
+                    filtered = self._run_searches(browser, external_only=external_only, db=extractor.db)
 
                 # Add previously discovered jobs from DB that haven't been scraped yet
                 discovered_jobs = extractor.db.get_jobs_by_status("discovered")
                 if discovered_jobs:
                     logger.info(f"Adding {len(discovered_jobs)} previously discovered jobs from cache.")
                     for dj in discovered_jobs:
+                        # Skip LinkedIn jobs if we only want external jobs
+                        if external_only and not str(dj["id"]).startswith("ext-"):
+                            continue
+
                         if dj["id"] not in {j.id for j in filtered}:
                             # Convert DB dict to object compatible with extractor
                             filtered.append(
