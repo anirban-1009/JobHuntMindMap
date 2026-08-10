@@ -1,6 +1,6 @@
 import json
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from src.utils.logger import get_logger
 
@@ -23,6 +23,15 @@ class LLMClient(ABC):
             str: The generated text response.
         """
         pass
+
+    def embed(self, text: str) -> List[float]:
+        """
+        Generates an embedding vector for the given text.
+
+        Returns an empty list if the provider doesn't support embeddings or the call fails,
+        so callers can fall back to keyword-only search instead of crashing.
+        """
+        return []
 
     def generate_json(self, prompt: str, system_instruction: Optional[str] = None) -> Dict[str, Any]:
         """

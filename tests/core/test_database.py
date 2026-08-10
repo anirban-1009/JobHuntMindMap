@@ -131,3 +131,101 @@ class TestDatabaseManager:
 
         assert db.get_job("del1") is None
         assert len(db.get_requests_for_job("del1")) == 0
+
+    def test_vault_index_status_empty_initially(self, db):
+        """No status should be tracked before anything is indexed."""
+        assert db.get_vault_index_status() == {}
+
+    def test_upsert_and_search_vault_text(self, db):
+        """Indexed documents should be findable via BM25 full-text search."""
+        db.upsert_vault_document(
+            path="Jobs/Acme.md",
+            category="Jobs",
+            title="Senior Backend Engineer - Acme",
+            content="Looking for strong Kubernetes and distributed systems experience.",
+            mtime=100.0,
+        )
+
+        results = db.search_vault_text("kubernetes")
+        assert len(results) == 1
+        assert results[0]["path"] == "Jobs/Acme.md"
+        assert results[0]["category"] == "Jobs"
+        assert "Kubernetes" in results[0]["snippet"]
+
+        assert db.search_vault_text("nonexistentterm") == []
+
+    def test_upsert_vault_document_updates_status(self, db):
+        """Upserting should record the file's mtime for later change detection."""
+        db.upsert_vault_document("Jobs/A.md", "Jobs", "A", "content", mtime=100.0)
+
+        status = db.get_vault_index_status()
+        assert status["Jobs/A.md"]["mtime"] == 100.0
+        assert status["Jobs/A.md"]["embedded_mtime"] is None
+
+    def test_upsert_vault_document_replaces_prior_text(self, db):
+        """Re-upserting the same path should replace, not duplicate, the indexed content."""
+        db.upsert_vault_document("Jobs/A.md", "Jobs", "A", "original kubernetes content", mtime=100.0)
+        db.upsert_vault_document("Jobs/A.md", "Jobs", "A", "updated rust content", mtime=200.0)
+
+        assert db.search_vault_text("kubernetes") == []
+        results = db.search_vault_text("rust")
+        assert len(results) == 1
+        assert db.get_vault_index_status()["Jobs/A.md"]["mtime"] == 200.0
+
+    def test_delete_vault_document(self, db):
+        """Deleting a document should remove it from the text index and status tracking."""
+        db.upsert_vault_document("Jobs/A.md", "Jobs", "A", "kubernetes content", mtime=100.0)
+        db.delete_vault_document("Jobs/A.md")
+
+        assert db.search_vault_text("kubernetes") == []
+        assert db.get_vault_index_status() == {}
+
+    def test_upsert_and_search_vault_semantic(self, db):
+        """Documents indexed with an embedding should be retrievable via KNN search."""
+        if not db.vector_search_enabled:
+            pytest.skip("sqlite-vec extension not available")
+
+        embedding_dim = db.embedding_dim
+        doc_embedding = [1.0] + [0.0] * (embedding_dim - 1)
+        db.upsert_vault_document("Jobs/A.md", "Jobs", "Job A", "content", mtime=100.0, embedding=doc_embedding)
+
+        results = db.search_vault_semantic(doc_embedding, limit=5)
+        assert len(results) == 1
+        assert results[0]["path"] == "Jobs/A.md"
+        assert results[0]["title"] == "Job A"
+        assert results[0]["distance"] == pytest.approx(0.0)
+
+        status = db.get_vault_index_status()
+        assert status["Jobs/A.md"]["embedded_mtime"] == 100.0
+
+    def test_text_only_reindex_preserves_embedded_mtime(self, db):
+        """A text-only re-upsert (no embedding) must not erase a prior embedded_mtime.
+
+        Otherwise a keyword-only reindex would make an already-embedded file look
+        unembedded, forcing (and re-billing) an unnecessary re-embed later.
+        """
+        if not db.vector_search_enabled:
+            pytest.skip("sqlite-vec extension not available")
+
+        embedding_dim = db.embedding_dim
+        doc_embedding = [1.0] + [0.0] * (embedding_dim - 1)
+        db.upsert_vault_document("Jobs/A.md", "Jobs", "A", "content v1", mtime=100.0, embedding=doc_embedding)
+
+        # Text changed (e.g. status tag edit) but re-indexed without an embedding.
+        db.upsert_vault_document("Jobs/A.md", "Jobs", "A", "content v2", mtime=200.0, embedding=None)
+
+        status = db.get_vault_index_status()
+        assert status["Jobs/A.md"]["mtime"] == 200.0
+        assert status["Jobs/A.md"]["embedded_mtime"] == 100.0
+
+    def test_delete_vault_document_removes_embedding(self, db):
+        """Deleting a document should also drop its vector entry, not just the text index."""
+        if not db.vector_search_enabled:
+            pytest.skip("sqlite-vec extension not available")
+
+        embedding_dim = db.embedding_dim
+        doc_embedding = [1.0] + [0.0] * (embedding_dim - 1)
+        db.upsert_vault_document("Jobs/A.md", "Jobs", "A", "content", mtime=100.0, embedding=doc_embedding)
+        db.delete_vault_document("Jobs/A.md")
+
+        assert db.search_vault_semantic(doc_embedding, limit=5) == []

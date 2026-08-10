@@ -33,3 +33,19 @@ class FallbackClient(LLMClient):
 
         logger.error("All LLM providers failed.")
         return ""
+
+    def embed(self, text: str) -> List[float]:
+        """
+        Tries each client in order until one returns a non-empty embedding.
+        """
+        for client in self.clients:
+            try:
+                embedding = client.embed(text)
+                if embedding:
+                    return embedding
+            except Exception as e:
+                logger.warning(f"Provider {client.__class__.__name__} failed to embed: {e}")
+                continue
+
+        logger.error("All LLM providers failed to produce an embedding.")
+        return []

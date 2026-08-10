@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 import requests
 
@@ -11,16 +11,23 @@ logger = get_logger(__name__)
 class OllamaClient(LLMClient):
     """Client for local Ollama instance."""
 
-    def __init__(self, model_name: str = "llama3.2:latest", base_url: str = "http://localhost:11434"):
+    def __init__(
+        self,
+        model_name: str = "llama3.2:latest",
+        base_url: str = "http://localhost:11434",
+        embedding_model: str = "nomic-embed-text",
+    ):
         """
         Initialize Ollama client.
 
         Args:
             model_name: Name of the model pulled in Ollama (default: llama3.2:latest).
             base_url: Ollama API base URL (default: http://localhost:11434).
+            embedding_model: Name of the embedding model pulled in Ollama (default: nomic-embed-text).
         """
         self.model_name = model_name
         self.base_url = base_url
+        self.embedding_model = embedding_model
 
     def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
         """
@@ -44,3 +51,19 @@ class OllamaClient(LLMClient):
         except Exception as e:
             logger.error(f"Ollama API error: {e}")
             return ""
+
+    def embed(self, text: str) -> List[float]:
+        """
+        Generates an embedding vector for the given text using Ollama's embeddings API.
+
+        Returns:
+            List[float]: The embedding vector, or an empty list on failure.
+        """
+        try:
+            payload = {"model": self.embedding_model, "prompt": text}
+            response = requests.post(f"{self.base_url}/api/embeddings", json=payload, timeout=120)
+            response.raise_for_status()
+            return list(response.json().get("embedding", []))
+        except Exception as e:
+            logger.error(f"Ollama embedding error: {e}")
+            return []

@@ -8,11 +8,13 @@ import yaml
 
 from src.core.ai import get_llm_client
 from src.core.analysis_service import AnalysisService
+from src.core.database import DatabaseManager
 from src.core.referral_service import ReferralService
 from src.core.relevance_scorer import FastScorer
 from src.core.resume_service import ResumeService
 from src.generator.resume_tailorer import ResumeTailorer
 from src.generator.sync_service import SyncService
+from src.generator.vault_indexer import VaultIndexer
 from src.ingest.browser_manager import BrowserManager
 from src.ingest.job_details_extractor import JobDetailsExtractor
 from src.ingest.job_searcher import JobSearcher
@@ -396,6 +398,25 @@ class MindMapApp:
         logger.info("Syncing back from Obsidian...")
         SyncService(self.config, llm_client=self.llm).sync_from_obsidian()
         logger.info("Sync-back complete.")
+
+    def find(self, query: str, semantic: bool = False, limit: int = 10, reindex: bool = False) -> List[Dict[str, Any]]:
+        """
+        Searches the Obsidian vault: BM25 keyword search by default, or embedding-based
+        semantic search when `semantic` is True.
+        """
+        db = DatabaseManager()
+        # Only hand the indexer an LLM client when embeddings are actually needed, so a plain
+        # keyword `--reindex` never triggers billable embedding calls.
+        indexer = VaultIndexer(self.config, db, llm_client=self.llm if semantic else None)
+
+        if reindex or semantic:
+            # Semantic search needs freshly embedded docs to be useful; keyword search can
+            # tolerate a stale index since it's usually refreshed right after 'sync'.
+            indexer.reindex_changed()
+
+        if semantic:
+            return indexer.search_semantic(query, limit=limit)
+        return indexer.search_text(query, limit=limit)
 
     def referral(self, job_id: str, connection_name: Optional[str], max_chars: int = 300) -> Optional[Dict[str, str]]:
         """Generate personalized referral message for a job and contact."""
