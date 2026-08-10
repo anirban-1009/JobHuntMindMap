@@ -9,6 +9,7 @@ from src.core.relevance_scorer import ScoringResult
 from src.core.resume_service import ResumeService
 from src.generator.dashboard_generator import DashboardGenerator
 from src.generator.template_manager import TemplateManager
+from src.generator.vault_indexer import VaultIndexer
 from src.generator.vault_manager import VaultManager
 from src.ingest.job_details_extractor import JobDetailsExtractor
 from src.utils.logger import get_logger
@@ -42,7 +43,19 @@ class SyncService:
         # 3. Generate Dashboard
         self.dashboard_generator.generate()
 
+        # 4. Refresh vault search index (job/person/company notes just changed above)
+        self._reindex_vault()
+
         logger.info("Obsidian sync complete.")
+
+    def _reindex_vault(self) -> None:
+        """Updates the vault search index after notes have been written/removed."""
+        if not self.extractor.db:
+            return
+        try:
+            VaultIndexer(self.config, self.extractor.db).reindex_changed()
+        except Exception as e:
+            logger.warning(f"Vault search reindex failed: {e}")
 
     def _sync_all(self) -> None:
         """Reads jobs and connections and writes them to the Vault with links."""
@@ -52,11 +65,22 @@ class SyncService:
 
         all_jobs_data = self.extractor.db.get_all_jobs(limit=10000)
         jobs: List[Dict[str, Any]] = []
+        skipped_unscraped = 0
         for jd in all_jobs_data:
+            if jd.get("status") == "discovered":
+                # Not yet scraped - skip until 'scrape' has populated full details
+                skipped_unscraped += 1
+                continue
             job_obj = self.extractor.get_cached_job(jd["id"])
             if job_obj:
                 score = self._load_analysis(jd)
                 jobs.append({"details": job_obj, "score": score})
+
+        if skipped_unscraped:
+            logger.info(f"Skipped {skipped_unscraped} unscraped ('discovered') jobs during sync.")
+
+        # Sort jobs by score ascending for deterministic ordering
+        bucket_size = int(self.config.get("sync", {}).get("score_bucket_size", 10))
 
         # Prepare paths for NetworkGraphBuilder
         user_cfg = self.config.get("user", {})
@@ -147,7 +171,10 @@ class SyncService:
                 resume_data=self.resume_data,
             )
             filename = f"{job.title} - {job.company}.md"
-            self.vault_manager.write_file(content, filename, "jobs", subfolder=specialization)
+            # Determine subfolder based on score bucket
+            start = (score.score // bucket_size) * bucket_size
+            end = start + bucket_size - 1
+            self.vault_manager.write_file(content, filename, "jobs", subfolder=f"Score_{start}-{end}")
 
         # 3. Sync Companies
         all_companies = set(list(company_to_jobs.keys()) + list(company_to_people.keys()))
@@ -202,6 +229,7 @@ class SyncService:
 
         db_jobs = self.extractor.db.get_all_jobs(limit=10000)
         db_ids: Set[str] = {str(job["id"]) for job in db_jobs}
+        unscraped_ids: Set[str] = {str(job["id"]) for job in db_jobs if job.get("status") == "discovered"}
 
         jobs_folder = self.vault_manager.vault_path / self.vault_manager.folders.get("jobs", "Jobs")
         if not jobs_folder.exists():
@@ -213,11 +241,15 @@ class SyncService:
             try:
                 content = file_path.read_text(encoding="utf-8")
                 # Look for "- **Job ID:** {id}"
-                match = re.search(r"- \*\*Job ID:\*\* (\d+)", content)
+                match = re.search(r"- \*\*Job ID:\*\* (\S+)", content)
                 if match:
                     job_id = match.group(1)
                     if job_id not in db_ids:
                         logger.info(f"Removing orphaned job note: {file_path.name} (ID: {job_id})")
+                        file_path.unlink()
+                        removed_count += 1
+                    elif job_id in unscraped_ids:
+                        logger.info(f"Removing unscraped job note: {file_path.name} (ID: {job_id})")
                         file_path.unlink()
                         removed_count += 1
             except Exception as e:

@@ -71,12 +71,14 @@ ai:
   gemini:
     api_key: "${GEMINI_API_KEY}" # Can read from env var
     model_name: "gemini-2.0-flash-exp" # Fast and free
-  
+    embedding_model: "text-embedding-004" # Used for `mindmap find --semantic` (768 dimensions)
+
   # Ollama Settings (Local LLM)
   # Download at: https://ollama.com/
   ollama:
     base_url: "http://localhost:11434"
     model_name: "llama3"
+    embedding_model: "nomic-embed-text" # Used for `mindmap find --semantic` (768 dimensions; `ollama pull nomic-embed-text`)
 
 
 # ==============================================================================

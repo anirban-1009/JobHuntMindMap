@@ -16,6 +16,7 @@ Instead of tracking applications in endless spreadsheets, this tool generates a 
 *   [Mind Map Structure](docs/MIND_MAP_STRUCTURE.md) - How the Obsidian vault is organized to visualize your search.
 *   [Architecture](docs/ARCHITECTURE.md) - How the system is built.
 *   [Data Processing](docs/DATA_PROCESSING.md) - The logic behind job matching and scoring.
+*   [Vault Search](docs/VAULT_SEARCH.md) - Full-text search over the Obsidian vault via SQLite FTS5.
 *   [Development Plan](docs/DEVELOPMENT_PLAN.md) - Phased implementation guide with task lists.
 *   [Deployment Strategy](docs/DEPLOYMENT.md) - How to run and schedule the tool locally.
 *   [Code of Conduct](docs/CODE_OF_CONDUCT.md) - Design patterns (SOLID, OOP) and engineering standards.

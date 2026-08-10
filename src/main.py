@@ -169,5 +169,30 @@ def prune(config):
     MindMapApp(config).prune()
 
 
+@cli.command()
+@click.option("--config", default="config.yaml")
+@click.argument("query")
+@click.option("--semantic", is_flag=True, default=False, help="Use embedding-based semantic search")
+@click.option("--limit", default=10, type=int, help="Maximum number of results")
+@click.option("--reindex", is_flag=True, default=False, help="Reindex changed vault files before searching")
+def find(config, query, semantic, limit, reindex):
+    """Search the Obsidian vault (keyword by default, --semantic for embeddings)."""
+    results = MindMapApp(config).find(query, semantic=semantic, limit=limit, reindex=reindex)
+
+    if not results:
+        click.echo(Fore.YELLOW + "No results found.")
+        return
+
+    for r in results:
+        click.echo(Fore.WHITE + "-" * 50)
+        click.echo(Fore.GREEN + f"{r.get('title') or r.get('path')} " + Fore.CYAN + f"[{r.get('category')}]")
+        click.echo(Fore.WHITE + r.get("path", ""))
+        if "snippet" in r:
+            click.echo(r["snippet"])
+        elif "distance" in r:
+            click.echo(Fore.CYAN + f"distance: {r['distance']:.4f}")
+    click.echo(Fore.WHITE + "-" * 50)
+
+
 if __name__ == "__main__":
     cli()

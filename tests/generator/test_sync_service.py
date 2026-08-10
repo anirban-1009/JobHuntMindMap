@@ -198,6 +198,21 @@ class TestSyncService:
         sync_service.vault_manager.write_file.assert_any_call("job content", "SDE - TestCo.md", "jobs", subfolder=ANY)
         sync_service.vault_manager.write_file.assert_any_call("company content", "TestCo.md", "companies")
 
+    def test_sync_all_skips_discovered_jobs(self, sync_service):
+        """Unscraped ('discovered') jobs should not be written to the vault."""
+        mock_db = MagicMock()
+        sync_service.extractor.db = mock_db
+        sync_service.extractor.db.get_all_jobs.return_value = [
+            {"id": "123", "status": "discovered", "analysis_data": None},
+        ]
+
+        with patch("src.generator.sync_service.NetworkGraphBuilder") as mock_builder_class:
+            mock_builder_class.return_value.connections = []
+            sync_service._sync_all()
+
+        sync_service.extractor.get_cached_job.assert_not_called()
+        sync_service.vault_manager.write_file.assert_not_called()
+
     def test_prune_vault(self, sync_service, tmp_path):
         """Test removing orphaned files from vault."""
         sync_service.vault_manager.vault_path = tmp_path
@@ -211,6 +226,23 @@ class TestSyncService:
 
         # Mock DB to NOT contain ID 999
         sync_service.extractor.db.get_all_jobs.return_value = [{"id": "123"}]
+
+        sync_service.prune_vault()
+
+        assert not job_file.exists()
+
+    def test_prune_vault_removes_unscraped_notes(self, sync_service, tmp_path):
+        """Notes for jobs still in 'discovered' status should also be pruned."""
+        sync_service.vault_manager.vault_path = tmp_path
+        sync_service.vault_manager.folders.get.return_value = "Jobs"
+        jobs_folder = tmp_path / "Jobs"
+        jobs_folder.mkdir()
+
+        # Job exists in DB but hasn't been scraped yet (external-style id)
+        job_file = jobs_folder / "Unscraped Job.md"
+        job_file.write_text("- **Job ID:** ext-999\n- **Status:** #ToApply", encoding="utf-8")
+
+        sync_service.extractor.db.get_all_jobs.return_value = [{"id": "ext-999", "status": "discovered"}]
 
         sync_service.prune_vault()
 
