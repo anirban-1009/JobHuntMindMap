@@ -48,7 +48,15 @@ class MindMapApp:
         )
         if user_experience_years:
             logger.info(f"Candidate experience: {user_experience_years} years")
-        self.analysis_service = AnalysisService(self.llm, user_experience_years=user_experience_years)
+        experience_tolerance_years = (
+            self.config.get("search", {}).get("filters", {}).get("experience_tolerance_years", 0)
+        )
+        self.analysis_service = AnalysisService(
+            self.llm,
+            user_experience_years=user_experience_years,
+            experience_tolerance_years=experience_tolerance_years,
+        )
+        self.user_experience_years = user_experience_years
 
     def _load_config(self) -> Dict[str, Any]:
         """Load and parse the YAML configuration file."""
@@ -107,15 +115,14 @@ class MindMapApp:
                     all_results.extend(results)
                     seen_searches.add(search_key)
                     if len(results) >= 15:
-                        logger.debug(f"Found {len(results)} jobs for '{kw}', skipping locations.")
-                        break
+                        logger.debug(f"Found {len(results)} jobs for '{kw}' in {loc}.")
 
         # 2. External Career Sites
         external_sites = search_cfg.get("external_sites", [])
         if external_sites:
             from src.ingest.external_searcher import ExternalSiteSearcher
 
-            ext_searcher = ExternalSiteSearcher(browser, self.llm)
+            ext_searcher = ExternalSiteSearcher(browser, self.llm, max_experience_years=self.user_experience_years)
             for site in external_sites:
                 try:
                     url = site.get("url") if isinstance(site, dict) else site

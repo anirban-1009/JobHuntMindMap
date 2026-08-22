@@ -55,14 +55,15 @@ class ReferralService:
                     all_skills.extend(items)
             skills_str = ", ".join(all_skills[:8])
 
-        # 2. Extract Experience info
+        # 2. Extract Experience info (config.yaml takes precedence over resume.json)
+        user_cfg = self.config.get("user", {})
         experience_list = resume_data.get("experience", [])
-        total_exp_years = self.config.get("user", {}).get("total_experience_years") or resume_data.get(
+        total_exp_years = user_cfg.get("total_experience_years") or resume_data.get(
             "total_experience_years", len(experience_list) * 2
         )
-        current_role = resume_data.get("job_title", "Software Engineer")
+        current_role = user_cfg.get("current_role") or resume_data.get("job_title", "Software Engineer")
 
-        if experience_list and not resume_data.get("job_title"):
+        if experience_list and not user_cfg.get("current_role") and not resume_data.get("job_title"):
             current_role = experience_list[0].get("title", current_role)
 
         connection_name = getattr(connection, "full_name", "Professional")
@@ -84,20 +85,23 @@ class ReferralService:
         CRITICAL GUIDELINES:
         1. LENGTH: Must be under {max_chars} characters.
         2. NO ROBOTIC TEMPLATES: Avoid "I am writing to express interest". Use natural spoken English.
-        3. DIVERSITY: Be creative. You can start with a shared company (if they are at the target company), a compliment on their work/profile, or a direct but warm approach.
+        3. TONE: Pick ONE natural opening — a compliment on their work/profile, a shared-company reference, or a direct but warm approach. Do not mix styles.
         4. EXPERIENCE: Briefly mention {total_exp_years}+ years of experience or the current role {current_role} if it adds value.
         5. CALL TO ACTION: Ask if they'd be open to sharing my profile/referring me, or if they have advice for the {job.title} role.
         6. NO placeholders [like this], NO subject lines.
 
-        Example Styles (Pick one or mix):
-        - Style A: Hi {first_name}, I'm {candidate_first_name}. I've been following {job.company}'s work in tech...
-        - Style B: Hey {first_name}, hope you're doing well! I'm a {current_role} with {total_exp_years}y exp, interested in the {job.title} opening...
-        - Style C: Hi {first_name}, I saw you're at {job.company}. I'm applying for the {job.title} role and was wondering if you'd be open to a quick chat or referral?
-        """
-        message = self.llm.generate(prompt).strip()
+        OUTPUT FORMAT (STRICT):
+        Reply with ONLY the final message text, ready to send as-is.
+        Do NOT include multiple options, labels (e.g. "Option 1", "Style A"), headers, bullet points, markdown, explanations, or any text other than the message itself.
 
-        # Clean up any quotes the LLM might include
-        message = message.strip('"').strip("'")
+        Example (format only, write your own content):
+        Hi {first_name}, I'm {candidate_first_name}...
+        """
+        # Cap output tokens as a hard backstop against verbose/multi-option generations,
+        # independent of whether the model follows the prompt's formatting instructions.
+        max_tokens = max(60, max_chars // 2)
+        raw_message = self.llm.generate(prompt, max_tokens=max_tokens).strip()
+        message = self._extract_single_message(raw_message)
 
         if len(message) > max_chars:
             logger.warning(
@@ -105,6 +109,28 @@ class ReferralService:
             )
 
         return message
+
+    @staticmethod
+    def _extract_single_message(text: str) -> str:
+        """
+        Safety net for models that ignore the single-message instruction and emit
+        preamble, multiple labeled options, or markdown formatting anyway.
+        Picks the first paragraph that looks like an actual message.
+        """
+        text = text.strip().strip('"').strip("'")
+
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        label_markers = ("option", "style", "approach", "**", "###", "here are", "here's")
+
+        for paragraph in paragraphs:
+            # Drop label/preamble lines (e.g. "**Option 1: ...**") but keep the
+            # actual message line(s) that follow within the same paragraph.
+            lines = [line for line in paragraph.split("\n") if line.strip()]
+            lines = [line for line in lines if not any(line.strip().lower().startswith(m) for m in label_markers)]
+            if lines:
+                return "\n".join(lines).strip().strip('"').strip("'")
+
+        return text
 
     def save_referral(self, job_id: str, connection_name: str, message: str, profile_url: str = "https://linkedin.com"):
         """Saves the referral request to the database."""

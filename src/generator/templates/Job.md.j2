@@ -1,17 +1,34 @@
+---
+type: job
+title: {{ job.title | yaml }}
+company: {{ job.company | yaml }}
+job_id: {{ job.id | yaml }}
+status: {{ status | yaml }}
+applied: {{ 'true' if status not in ['ToApply', 'Wishlist'] else 'false' }}
+applied_at: {{ applied_at | yaml if applied_at else 'null' }}
+score: {{ score.score }}
+specialization: {{ specialization | yaml }}
+location: {{ job.location | yaml }}
+employment_type: {{ job.employment_type | yaml }}
+seniority_level: {{ job.seniority_level | yaml }}
+job_function: {{ job.job_function | yaml }}
+industries: {{ job.industries | yaml }}
+posted_date: {{ job.posted_date | yaml }}
+added: {{ job.created_at | yaml }}
+link: {{ job.link | yaml }}
+{% if job.salary %}
+salary: {{ job.salary | yaml }}
+{% endif %}
+candidate_experience_years: {{ resume.total_experience_years | yaml if resume.total_experience_years else 'null' }}
+poc_name: {{ poc_name | yaml if poc_name else 'null' }}
+poc_link: {{ poc_link | yaml if poc_link else 'null' }}
+tags:
+  - job
+  - {{ specialization }}
+---
 # {{ job.title }} @ [[{{ job.company|replace(' ', '_') }}]]
 
-- **Score:** {{ score.score }}/100
-- **Job ID:** {{ job.id }}
-- **Location:** {{ job.location }}
-- **Posted:** {{ job.posted_date }}
-- **Type:** {{ job.employment_type }}
-- **Seniority:** {{ job.seniority_level }}
-- **Job Function:** {{ job.job_function }}
-- **Industries:** {{ job.industries }}
-- **Link:** [Apply Here]({{ job.link }})
-- **Added:** {{ job.created_at }}
-- **Status:** #ToApply #{{ specialization }}
-- **Candidate Exp:** {{ resume.total_experience_years if resume.total_experience_years else 'Unknown' }} years
+[Apply Here]({{ job.link }})
 
 ## Analysis
 **Reasoning:**
@@ -34,6 +51,15 @@
 - No direct connections found.
 {% endfor %}
 
+## Potential Connection
+A cold LinkedIn connection request sent, hoping for a referral. Fill in the `poc_name` /
+`poc_link` properties (or the matching columns in your Base) - they're preserved across syncs.
+{% if poc_name %}
+- [{{ poc_name }}]({{ poc_link }})
+{% else %}
+- None yet.
+{% endif %}
+
 ## Referral Messages
 {% for req in referrals %}
 ### Sent to {{ req.connection_name }} ({{ req.created_at }})
@@ -46,7 +72,9 @@
 {% endfor %}
 
 ## Job Description
+{{ description_fence }}
 {{ job.description }}
+{{ description_fence }}
 
 ## Notes
-- 
+-

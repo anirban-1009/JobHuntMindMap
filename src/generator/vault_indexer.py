@@ -1,6 +1,8 @@
 import pathlib
 from typing import Any, Dict, List, Optional
 
+import yaml
+
 from src.core.ai.base import LLMClient
 from src.core.database import DatabaseManager
 from src.utils.logger import get_logger
@@ -89,6 +91,16 @@ class VaultIndexer:
             return None
 
     def _extract_title(self, content: str, file_path: pathlib.Path) -> str:
+        if content.startswith("---"):
+            end = content.find("\n---", 3)
+            if end != -1:
+                try:
+                    frontmatter = yaml.safe_load(content[3:end])
+                except yaml.YAMLError:
+                    frontmatter = None
+                if isinstance(frontmatter, dict) and frontmatter.get("title"):
+                    return str(frontmatter["title"])
+
         for line in content.splitlines():
             stripped = line.strip()
             if stripped.startswith("# "):

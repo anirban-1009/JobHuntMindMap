@@ -104,3 +104,25 @@ class TestResumeTailorer:
         assert result == output_pdf
         assert output_pdf.exists()
         assert mock_run.call_count == 2  # Called twice for references
+
+    @patch("src.generator.resume_tailorer.subprocess.run")
+    @patch("src.generator.resume_tailorer.get_llm_client")
+    def test_compile_pdf_missing_binary_raises_actionable_error(self, mock_get_llm, mock_run, mock_config, tmp_path):
+        mock_get_llm.return_value = MagicMock()
+        tailorer = ResumeTailorer(mock_config)
+        mock_run.side_effect = FileNotFoundError(2, "No such file or directory", "pdflatex")
+
+        with pytest.raises(RuntimeError, match="pdflatex is not installed or not on PATH"):
+            tailorer.compile_pdf("latex content", tmp_path / "resume.pdf")
+
+    @patch("src.generator.resume_tailorer.subprocess.run")
+    @patch("src.generator.resume_tailorer.get_llm_client")
+    def test_compile_pdf_missing_package_raises_actionable_error(self, mock_get_llm, mock_run, mock_config, tmp_path):
+        mock_get_llm.return_value = MagicMock()
+        tailorer = ResumeTailorer(mock_config)
+        mock_run.return_value = MagicMock(
+            returncode=1, stdout="! LaTeX Error: File `titlesec.sty' not found.\n", stderr=""
+        )
+
+        with pytest.raises(RuntimeError, match="tlmgr install titlesec"):
+            tailorer.compile_pdf("latex content", tmp_path / "resume.pdf")

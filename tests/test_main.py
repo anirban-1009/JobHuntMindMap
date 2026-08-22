@@ -296,4 +296,4 @@ class TestMainCLI:
         assert result.exit_code == 0
         assert "To: Alice Smith" in result.output
         assert "Hi Alice, please refer me." in result.output
-        mock_app.referral.assert_called_once_with("123", "Alice", max_chars=300)
+        mock_app.referral.assert_called_once_with("123", "Alice", max_chars=200)

@@ -96,7 +96,7 @@ def notify(config, min_score):
 @click.option("--config", default="config.yaml")
 @click.argument("job_id")
 @click.option("--name", default=None)
-@click.option("--max-chars", default=300, type=int, help="Maximum characters for the message")
+@click.option("--max-chars", default=200, type=int, help="Maximum characters for the message")
 def refer(config, job_id, name, max_chars):
     """Generate referral request for a job."""
     app = MindMapApp(config)

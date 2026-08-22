@@ -1,9 +1,13 @@
+---
+type: company
+name: {{ name | yaml }}
+industry: {{ industry | yaml }}
+location: {{ location | yaml }}
+website: {{ website | yaml }}
+tags:
+  - company
+---
 # {{ name }}
-
-- **Industry:** {{ industry }}
-- **Location:** {{ location }}
-- **Website:** [Link]({{ website }})
-- **Status:** #Company
 
 ## Jobs
 {% for job in jobs %}
@@ -16,4 +20,4 @@
 {% endfor %}
 
 ## Notes
-- 
+-

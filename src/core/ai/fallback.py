@@ -18,13 +18,13 @@ class FallbackClient(LLMClient):
         """
         self.clients = clients
 
-    def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    def generate(self, prompt: str, system_instruction: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
         """
         Tries each client in order until one succeeds.
         """
         for client in self.clients:
             try:
-                response = client.generate(prompt, system_instruction)
+                response = client.generate(prompt, system_instruction, max_tokens=max_tokens)
                 if response:
                     return response
             except Exception as e:

@@ -1,3 +1,4 @@
+import json
 import pathlib
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,28 @@ from src.ingest.job_details_extractor import JobDetails
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _yaml_scalar(value: Any) -> str:
+    """Renders a value as a safely-quoted YAML scalar for use in frontmatter."""
+    if value is None or value == "":
+        return "null"
+    return json.dumps(str(value))
+
+
+def _code_fence(text: Optional[str]) -> str:
+    """Picks a backtick fence long enough that it can't be closed early by a run of backticks
+    already inside `text` (Markdown fenced code blocks end at the first line of >= as many
+    backticks as the opener)."""
+    longest_run = 0
+    current_run = 0
+    for char in text or "":
+        if char == "`":
+            current_run += 1
+            longest_run = max(longest_run, current_run)
+        else:
+            current_run = 0
+    return "`" * max(3, longest_run + 1)
 
 
 class TemplateManager:
@@ -36,6 +59,7 @@ class TemplateManager:
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        self.env.filters["yaml"] = _yaml_scalar
 
     def render_job(
         self,
@@ -45,6 +69,10 @@ class TemplateManager:
         people: Optional[List[Dict[str, str]]] = None,
         referrals: Optional[List[Dict[str, Any]]] = None,
         resume_data: Optional[Dict[str, Any]] = None,
+        status: str = "ToApply",
+        applied_at: Optional[str] = None,
+        poc_name: str = "",
+        poc_link: str = "",
     ) -> str:
         """
         Renders the Job.md template.
@@ -56,6 +84,12 @@ class TemplateManager:
             people: List of person dictionaries (name, filename, title).
             referrals: List of referral request dictionaries.
             resume_data: Dictionary containing candidate's resume data.
+            status: Display value for the job's application status (e.g. "ToApply", "Applied").
+            applied_at: Timestamp the job was marked "Applied", if any.
+            poc_name: Name of the LinkedIn POC the user sent a connection request to for this
+                job. Carried forward from the existing note, since this is authored in Obsidian
+                rather than tracked in the database.
+            poc_link: LinkedIn profile URL for `poc_name`.
 
         Returns:
             Rendered Markdown string.
@@ -71,6 +105,11 @@ class TemplateManager:
             people=people,
             referrals=referrals,
             resume=resume_data,
+            status=status,
+            applied_at=applied_at,
+            poc_name=poc_name,
+            poc_link=poc_link,
+            description_fence=_code_fence(job.description),
         )
 
     def render_company(

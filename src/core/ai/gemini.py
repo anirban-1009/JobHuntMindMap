@@ -35,13 +35,14 @@ class GeminiClient(LLMClient):
             logger.error(f"Failed to initialize Gemini Client: {e}")
             self.client = None
 
-    def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    def generate(self, prompt: str, system_instruction: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
         """
         Generates content using Gemini.
 
         Args:
             prompt: User prompt for generation.
             system_instruction: Optional system message.
+            max_tokens: Optional cap on generated output tokens.
 
         Returns:
             str: Generated text content.
@@ -51,8 +52,10 @@ class GeminiClient(LLMClient):
 
         try:
             config = None
-            if system_instruction:
-                config = types.GenerateContentConfig(system_instruction=system_instruction)
+            if system_instruction or max_tokens:
+                config = types.GenerateContentConfig(
+                    system_instruction=system_instruction, max_output_tokens=max_tokens
+                )
 
             response = self.client.models.generate_content(
                 model=self.model_name,

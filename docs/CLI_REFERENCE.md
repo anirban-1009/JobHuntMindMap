@@ -101,7 +101,7 @@ uv run mindmap refer <JOB_ID> [OPTIONS]
 ```
 **Options:**
 - `--name <text>`: Manually specify a person's name if not found in your network.
-- `--max-chars <int>`: Set a character limit for the message (default: 190).
+- `--max-chars <int>`: Set a character limit for the message (default: 200).
 - *Output Example:* The tool shows the character count, e.g., `(158/190 chars)`.
 
 ---
