@@ -16,9 +16,6 @@ class CanvasManager:
         self.nodes: List[Dict[str, Any]] = []
         self.edges: List[Dict[str, Any]] = []
 
-    def set_viewport(self):
-        pass  # Not strictly needed for JSON generation
-
     def add_node(
         self,
         node_type: str,
@@ -62,7 +59,7 @@ class CanvasManager:
         elif node_type == "file" and file_path:
             node["file"] = file_path
         elif node_type == "group" and label:
-            node["label"] = label  # Group label is stored in 'label' or 'text' depending on version? Usually 'label'.
+            node["label"] = label
 
         if color:
             node["color"] = color

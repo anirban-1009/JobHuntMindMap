@@ -8,6 +8,7 @@ Before you begin, ensure you have the following installed:
 - **Python 3.13+**
 - **Obsidian** (to view the mind map)
 - **Chrome or Firefox** (for the automated browser parts)
+- **LaTeX** (for resume generation; see below)
 
 ## 2. Setting Up the Environment
 
@@ -28,6 +29,27 @@ Before you begin, ensure you have the following installed:
     pip install .
     playwright install chromium
     ```
+
+## 2.5. Install LaTeX (for Resume Generation)
+
+The `tailor` command compiles a tailored resume PDF using `pdflatex`, so a LaTeX distribution is required.
+
+### macOS
+Install the lightweight **BasicTeX** distribution via Homebrew:
+```bash
+brew install --cask basictex
+```
+
+> **Note:** BasicTeX is a minimal TeX Live distribution. If the resume template requires a package that isn't included, install it with `tlmgr` (e.g. `sudo tlmgr install <package>`). For a full distribution, use `brew install --cask mactex` instead.
+
+### Windows
+Install **MiKTeX** from [miktex.org](https://miktex.org/download).
+
+### Linux
+Install TeX Live via your package manager, e.g.:
+```bash
+sudo apt-get install texlive-latex-base texlive-latex-extra texlive-fonts-recommended
+```
 
 ## 3. Configuration
 

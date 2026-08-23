@@ -1,3 +1,4 @@
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict
@@ -8,6 +9,8 @@ from src.core.ai import get_llm_client
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+_MISSING_PACKAGE_RE = re.compile(r"File `([\w.-]+)\.sty' not found")
 
 
 class ResumeTailorer:
@@ -175,14 +178,30 @@ class ResumeTailorer:
                 pdf_result.rename(output_path)
                 return output_path
             else:
-                raise FileNotFoundError("pdflatex failed to produce a PDF.")
+                raise RuntimeError("pdflatex reported success but did not produce a PDF.")
 
+        except FileNotFoundError as e:
+            logger.error(f"pdflatex binary not found: {e}")
+            raise RuntimeError(
+                "pdflatex is not installed or not on PATH. Install a LaTeX distribution "
+                "(e.g. BasicTeX or MacTeX on macOS, texlive-latex-base on Linux) and make sure "
+                "the `pdflatex` command is available in your shell."
+            ) from e
         except subprocess.CalledProcessError as e:
             # Try to extract the first error from stdout
             stdout_lines = (e.output or "").split("\n")
             first_error = next((line for line in stdout_lines if line.startswith("!")), "Unknown error")
             logger.error(f"pdflatex compilation failed: {first_error}")
-            raise RuntimeError(f"pdflatex failed: {first_error}")
+
+            missing_package = _MISSING_PACKAGE_RE.search(first_error)
+            if missing_package:
+                pkg = missing_package.group(1)
+                raise RuntimeError(
+                    f"pdflatex is missing the LaTeX package '{pkg}'. Install it with: tlmgr install {pkg} "
+                    "(may require sudo)."
+                ) from e
+
+            raise RuntimeError(f"pdflatex failed: {first_error}") from e
         finally:
             # Cleanup temp files (optional, keeping for debug for now or delete later)
             # In a production app, we should clean up.

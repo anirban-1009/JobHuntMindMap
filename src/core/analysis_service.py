@@ -14,16 +14,23 @@ logger = get_logger(__name__)
 class AnalysisService:
     """Orchestrates job scoring and gap analysis."""
 
-    def __init__(self, llm_client: LLMClient, user_experience_years: Optional[int] = None):
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        user_experience_years: Optional[int] = None,
+        experience_tolerance_years: int = 0,
+    ):
         """
         Initialize the AnalysisService.
 
         Args:
             llm_client: LLM client for analysis.
             user_experience_years: Candidate's maximum years of experience.
+            experience_tolerance_years: Years above user_experience_years a job's
+                stated requirement may still exceed before being auto-rejected.
         """
         self.llm = llm_client
-        self.scorer = RelevanceScorer(llm_client, user_experience_years)
+        self.scorer = RelevanceScorer(llm_client, user_experience_years, experience_tolerance_years)
         self.gap_analyzer = GapAnalyzer(llm_client)
         self.extractor = JobDetailsExtractor(None)
 

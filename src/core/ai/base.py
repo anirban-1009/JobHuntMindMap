@@ -11,13 +11,14 @@ class LLMClient(ABC):
     """Abstract base class for LLM clients to ensure consistent interface."""
 
     @abstractmethod
-    def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    def generate(self, prompt: str, system_instruction: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
         """
         Generates a text response from the LLM.
 
         Args:
             prompt: The user prompt.
             system_instruction: Optional system instruction or context.
+            max_tokens: Optional cap on generated output tokens.
 
         Returns:
             str: The generated text response.

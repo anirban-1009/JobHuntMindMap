@@ -3,6 +3,8 @@ import pathlib
 import re
 from typing import Any, Dict, List, Optional, Set
 
+import yaml
+
 from src.core.network_graph import NetworkGraphBuilder
 from src.core.referral_service import ReferralService
 from src.core.relevance_scorer import ScoringResult
@@ -15,6 +17,62 @@ from src.ingest.job_details_extractor import JobDetailsExtractor
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Maps the DB's internal job status to the display value written into a job note's
+# frontmatter `status` property (and back, when read from Obsidian).
+STATUS_DB_TO_DISPLAY = {
+    "new": "ToApply",
+    "discovered": "ToApply",
+    "to_apply": "ToApply",
+    "applied": "Applied",
+    "interviewing": "Interviewing",
+    "rejected": "Rejected",
+    "offered": "Offered",
+    "wishlist": "Wishlist",
+}
+STATUS_DISPLAY_TO_DB = {
+    "ToApply": "to_apply",
+    "Applied": "applied",
+    "Interviewing": "interviewing",
+    "Rejected": "rejected",
+    "Offered": "offered",
+    "Wishlist": "wishlist",
+}
+
+
+def _read_frontmatter(content: str) -> Dict[str, Any]:
+    """Parses the leading YAML frontmatter block of a note, returning {} if absent/invalid."""
+    if not content.startswith("---"):
+        return {}
+    end = content.find("\n---", 3)
+    if end == -1:
+        return {}
+    try:
+        data = yaml.safe_load(content[3:end])
+    except yaml.YAMLError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+_LEGACY_JOB_ID_RE = re.compile(r"- \*\*Job ID:\*\* (\S+)")
+
+
+def _extract_job_id(content: str, frontmatter: Dict[str, Any]) -> Optional[str]:
+    """Gets a note's job_id, falling back to the pre-frontmatter `- **Job ID:**` bullet format
+    for notes written before the frontmatter migration and never regenerated since."""
+    job_id = frontmatter.get("job_id")
+    if job_id is not None:
+        return str(job_id)
+    match = _LEGACY_JOB_ID_RE.search(content)
+    return match.group(1) if match else None
+
+
+def _is_auto_rejected(job_data: Dict[str, Any]) -> bool:
+    """True for jobs the pipeline auto-rejected with a 0 score (usually the experience regex
+    pre-filter in RelevanceScorer) - these were never real candidates and shouldn't be synced.
+    A job manually marked "Rejected" after actually being considered has a real (non-zero)
+    score, so it's unaffected and still syncs normally."""
+    return job_data.get("status") == "rejected" and job_data.get("relevance_score") == 0
 
 
 class SyncService:
@@ -31,19 +89,27 @@ class SyncService:
         self.resume_data = self.resume_service.get_resume_data()
 
     def sync(self) -> None:
-        """Syncs jobs, companies, and analysis to the Obsidian Vault."""
+        """Syncs jobs, companies, and analysis to the Obsidian Vault.
+
+        Pulls in edits made directly in Obsidian (the `applied` checkbox, `status`) before
+        regenerating notes - otherwise a checkbox ticked in the vault would never reach the DB,
+        and the very next sync would overwrite it back to whatever the DB still had.
+        """
         logger.info("Starting Obsidian sync...")
 
         # 1. Ensure Vault Folders Exist
         self.vault_manager.ensure_folders_exist()
 
-        # 2. Sync Jobs and Companies
+        # 2. Pull status/applied edits made in Obsidian into the DB first
+        self.sync_from_obsidian()
+
+        # 3. Sync Jobs and Companies
         self._sync_all()
 
-        # 3. Generate Dashboard
-        self.dashboard_generator.generate()
+        # 4. Generate the applications-by-month/week dashboard
+        self.dashboard_generator.generate(self.extractor.db)
 
-        # 4. Refresh vault search index (job/person/company notes just changed above)
+        # 5. Refresh vault search index (job/person/company notes just changed above)
         self._reindex_vault()
 
         logger.info("Obsidian sync complete.")
@@ -66,21 +132,40 @@ class SyncService:
         all_jobs_data = self.extractor.db.get_all_jobs(limit=10000)
         jobs: List[Dict[str, Any]] = []
         skipped_unscraped = 0
+        skipped_auto_rejected = 0
         for jd in all_jobs_data:
             if jd.get("status") == "discovered":
                 # Not yet scraped - skip until 'scrape' has populated full details
                 skipped_unscraped += 1
                 continue
+            if _is_auto_rejected(jd):
+                # Experience regex filter (or the LLM) scored it 0 and it was never a real
+                # candidate - don't clutter the vault with these.
+                skipped_auto_rejected += 1
+                continue
             job_obj = self.extractor.get_cached_job(jd["id"])
             if job_obj:
                 score = self._load_analysis(jd)
-                jobs.append({"details": job_obj, "score": score})
+                jobs.append(
+                    {
+                        "details": job_obj,
+                        "score": score,
+                        "status": jd.get("status"),
+                        "applied_at": jd.get("applied_at"),
+                    }
+                )
 
         if skipped_unscraped:
             logger.info(f"Skipped {skipped_unscraped} unscraped ('discovered') jobs during sync.")
+        if skipped_auto_rejected:
+            logger.info(f"Skipped {skipped_auto_rejected} auto-rejected (score 0) jobs during sync.")
 
         # Sort jobs by score ascending for deterministic ordering
         bucket_size = int(self.config.get("sync", {}).get("score_bucket_size", 10))
+
+        # Frontmatter fields (like the POC name/link) that are authored in Obsidian, not the DB,
+        # must be read back before each note is regenerated or they'd be lost on every sync.
+        existing_job_notes = self._index_existing_job_notes()
 
         # Prepare paths for NetworkGraphBuilder
         user_cfg = self.config.get("user", {})
@@ -162,6 +247,11 @@ class SyncService:
             # specialization = self._determine_specialization(job)
             specialization = job.specialization
             job_reqs = job_to_requests.get(job.id, [])
+            status_display = STATUS_DB_TO_DISPLAY.get(j.get("status"), "ToApply")
+            existing_note = existing_job_notes.get(str(job.id), {})
+            existing_fm = existing_note.get("frontmatter", {})
+            poc_name = existing_fm.get("poc_name") or ""
+            poc_link = existing_fm.get("poc_link") or ""
             content = self.template_manager.render_job(
                 job,
                 score,
@@ -169,12 +259,26 @@ class SyncService:
                 people=people_at_co,
                 referrals=job_reqs,
                 resume_data=self.resume_data,
+                status=status_display,
+                applied_at=j.get("applied_at"),
+                poc_name=poc_name,
+                poc_link=poc_link,
             )
             filename = f"{job.title} - {job.company}.md"
             # Determine subfolder based on score bucket
             start = (score.score // bucket_size) * bucket_size
             end = start + bucket_size - 1
-            self.vault_manager.write_file(content, filename, "jobs", subfolder=f"Score_{start}-{end}")
+            new_path = self.vault_manager.write_file(content, filename, "jobs", subfolder=f"Score_{start}-{end}")
+
+            # If the job's score bucket changed since the last sync, its old subfolder copy is
+            # now stale - remove it so the job doesn't end up duplicated across two subfolders.
+            for old_path in existing_note.get("paths", []):
+                if old_path != new_path:
+                    try:
+                        old_path.unlink()
+                        logger.info(f"Removed stale duplicate job note: {old_path}")
+                    except Exception as e:
+                        logger.warning(f"Could not remove stale duplicate {old_path}: {e}")
 
         # 3. Sync Companies
         all_companies = set(list(company_to_jobs.keys()) + list(company_to_people.keys()))
@@ -200,6 +304,34 @@ class SyncService:
 
             content = self.template_manager.render_company(name=co, jobs=co_jobs, people=co_people)
             self.vault_manager.write_file(content, f"{co}.md", "companies")
+
+    def _index_existing_job_notes(self) -> Dict[str, Dict[str, Any]]:
+        """Maps job_id -> {"frontmatter": dict, "paths": [Path, ...]} for job notes already in
+        the vault. A job_id can have multiple paths if it has a stale duplicate left behind in
+        an old Score_X-Y subfolder from before its score last changed."""
+        jobs_folder = self.vault_manager.vault_path / self.vault_manager.folders.get("jobs", "Jobs")
+        index: Dict[str, Dict[str, Any]] = {}
+        if not jobs_folder.exists():
+            return index
+
+        for file_path in jobs_folder.rglob("*.md"):
+            try:
+                content = file_path.read_text(encoding="utf-8")
+            except Exception as e:
+                logger.warning(f"Could not read {file_path} while indexing existing job notes: {e}")
+                continue
+            frontmatter = _read_frontmatter(content)
+            job_id = _extract_job_id(content, frontmatter)
+            if job_id is None:
+                continue
+            entry = index.setdefault(job_id, {"frontmatter": {}, "paths": [], "_mtime": -1.0})
+            entry["paths"].append(file_path)
+            # Prefer the most recently modified copy's frontmatter for preserved fields.
+            mtime = file_path.stat().st_mtime
+            if mtime > entry["_mtime"]:
+                entry["frontmatter"] = frontmatter
+                entry["_mtime"] = mtime
+        return index
 
     def _load_analysis(self, job_data: Dict[str, Any]) -> ScoringResult:
         """Loads analysis for a job from DB record, returning a default if not found."""
@@ -230,6 +362,7 @@ class SyncService:
         db_jobs = self.extractor.db.get_all_jobs(limit=10000)
         db_ids: Set[str] = {str(job["id"]) for job in db_jobs}
         unscraped_ids: Set[str] = {str(job["id"]) for job in db_jobs if job.get("status") == "discovered"}
+        auto_rejected_ids: Set[str] = {str(job["id"]) for job in db_jobs if _is_auto_rejected(job)}
 
         jobs_folder = self.vault_manager.vault_path / self.vault_manager.folders.get("jobs", "Jobs")
         if not jobs_folder.exists():
@@ -240,16 +373,18 @@ class SyncService:
         for file_path in jobs_folder.rglob("*.md"):
             try:
                 content = file_path.read_text(encoding="utf-8")
-                # Look for "- **Job ID:** {id}"
-                match = re.search(r"- \*\*Job ID:\*\* (\S+)", content)
-                if match:
-                    job_id = match.group(1)
+                job_id = _extract_job_id(content, _read_frontmatter(content))
+                if job_id is not None:
                     if job_id not in db_ids:
                         logger.info(f"Removing orphaned job note: {file_path.name} (ID: {job_id})")
                         file_path.unlink()
                         removed_count += 1
                     elif job_id in unscraped_ids:
                         logger.info(f"Removing unscraped job note: {file_path.name} (ID: {job_id})")
+                        file_path.unlink()
+                        removed_count += 1
+                    elif job_id in auto_rejected_ids:
+                        logger.info(f"Removing auto-rejected (score 0) job note: {file_path.name} (ID: {job_id})")
                         file_path.unlink()
                         removed_count += 1
             except Exception as e:
@@ -286,46 +421,37 @@ class SyncService:
             logger.warning(f"Jobs folder not found at {jobs_folder}")
             return
 
-        # Status Tag Mapping
-        tag_map = {
-            "#ToApply": "to_apply",
-            "#Applied": "applied",
-            "#Interviewing": "interviewing",
-            "#Rejected": "rejected",
-            "#Offered": "offered",
-            "#Wishlist": "wishlist",
-        }
-
         updated_count = 0
         for file_path in jobs_folder.rglob("*.md"):
             try:
                 content = file_path.read_text(encoding="utf-8")
-                # 1. Extract Job ID
-                id_match = re.search(r"- \*\*Job ID:\*\* (\d+)", content)
-                if not id_match:
+                frontmatter = _read_frontmatter(content)
+
+                job_id = frontmatter.get("job_id")
+                if job_id is None:
                     continue
-                job_id = id_match.group(1)
+                job_id = str(job_id)
 
-                # 2. Extract Status Tag
-                # Look for tags in the "Status:" line or anywhere in the file
-                # But typically we put them in the status line: - **Status:** #ToApply #Specialization
-                status_line_match = re.search(r"- \*\*Status:\*\* (.*)", content)
-                if status_line_match:
-                    line_content = status_line_match.group(1)
-                    found_status = None
-                    for tag, status_val in tag_map.items():
-                        if tag in line_content:
-                            found_status = status_val
-                            break
+                status_text = frontmatter.get("status")
+                found_status = STATUS_DISPLAY_TO_DB.get(status_text)
 
-                    if found_status:
-                        if self.extractor.db.job_exists(job_id):
-                            self.extractor.db.update_job_status(job_id, found_status)
-                            updated_count += 1
-                        else:
-                            logger.warning(
-                                f"Job ID {job_id} found in Obsidian ({file_path.name}) but not in database. Skipping."
-                            )
+                # The "applied" checkbox is a quick toggle for the common ToApply <-> Applied
+                # transition. It only takes effect at that boundary; finer states (Interviewing,
+                # Rejected, Offered, Wishlist) are set via the `status` property directly.
+                applied_checkbox = frontmatter.get("applied")
+                if applied_checkbox is True and status_text == "ToApply":
+                    found_status = "applied"
+                elif applied_checkbox is False and status_text == "Applied":
+                    found_status = "to_apply"
+
+                if found_status:
+                    if self.extractor.db.job_exists(job_id):
+                        self.extractor.db.update_job_status(job_id, found_status)
+                        updated_count += 1
+                    else:
+                        logger.warning(
+                            f"Job ID {job_id} found in Obsidian ({file_path.name}) but not in database. Skipping."
+                        )
 
             except Exception as e:
                 logger.warning(f"Error processing {file_path} for sync-back: {e}")

@@ -2,8 +2,8 @@ from typing import List, Optional
 
 import requests
 
-from src.core.ai.base import LLMClient
 from src.utils.logger import get_logger
+from src.core.ai.base import LLMClient
 
 logger = get_logger(__name__)
 
@@ -29,21 +29,28 @@ class OllamaClient(LLMClient):
         self.base_url = base_url
         self.embedding_model = embedding_model
 
-    def generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+    def generate(self, prompt: str, system_instruction: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
         """
         Generates content using Ollama REST API.
 
         Args:
             prompt: User prompt for generation.
             system_instruction: Optional system instruction.
+            max_tokens: Optional cap on generated output tokens (maps to Ollama's num_predict).
 
         Returns:
             str: Generated text content from Ollama.
         """
         try:
-            payload = {"model": self.model_name, "prompt": prompt, "stream": False}
+            # Reasoning-capable models (e.g. gemma4) burn hundreds-to-thousands of hidden
+            # "thinking" tokens before writing anything to `response`, which is slow and,
+            # if `max_tokens` cuts generation off mid-thought, yields an empty response.
+            # This app has no use for reasoning traces, so thinking is always disabled.
+            payload = {"model": self.model_name, "prompt": prompt, "stream": False, "think": False}
             if system_instruction:
                 payload["system"] = system_instruction
+            if max_tokens:
+                payload["options"] = {"num_predict": max_tokens}
 
             response = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=120)
             response.raise_for_status()

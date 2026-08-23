@@ -69,7 +69,8 @@ class DatabaseManager:
             specialization TEXT DEFAULT 'General',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            status TEXT DEFAULT 'new'
+            status TEXT DEFAULT 'new',
+            applied_at TIMESTAMP
         );
         """
 
@@ -86,6 +87,12 @@ class DatabaseManager:
             conn = self._get_connection()
             try:
                 conn.execute(create_jobs_table)
+
+                # Migrate: add columns that didn't exist in older DBs (CREATE TABLE IF NOT
+                # EXISTS above only helps on a fresh DB).
+                existing_columns = {row[1] for row in conn.execute("PRAGMA table_info(jobs)")}
+                if "applied_at" not in existing_columns:
+                    conn.execute("ALTER TABLE jobs ADD COLUMN applied_at TIMESTAMP")
 
                 # Create requests table
                 create_requests_table = """
@@ -339,8 +346,17 @@ class DatabaseManager:
             raise
 
     def update_job_status(self, job_id: str, status: str):
-        """Updates the status of a job."""
-        query = "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        """Updates the status of a job.
+
+        Stamps `applied_at` the moment a job transitions to 'applied', and clears it if the
+        job is reverted back to 'to_apply' - so it always reflects the most recent application.
+        """
+        if status == "applied":
+            query = "UPDATE jobs SET status = ?, applied_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        elif status == "to_apply":
+            query = "UPDATE jobs SET status = ?, applied_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+        else:
+            query = "UPDATE jobs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         try:
             with contextlib.closing(self._get_connection()) as conn:
                 with conn:

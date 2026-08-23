@@ -66,8 +66,90 @@ class TestRelevanceScorer:
 
         assert result is None
 
+    def test_plus_syntax_requirement_matching_candidate_years_is_not_rejected(self, mock_llm, sample_job):
+        """'2+ years' means 2 or more - a candidate with exactly 2 years qualifies
+        and must reach the LLM, not be killed by the regex pre-filter."""
+        scorer = RelevanceScorer(mock_llm, user_experience_years=2)
+        sample_job.description = "Requires 2+ years of experience with Python."
+        mock_llm.generate_json.return_value = {
+            "score": 80,
+            "matching_skills": ["Python"],
+            "missing_skills": [],
+            "reasoning": "Good fit.",
+        }
 
-class TestFastScorer:
+        result = scorer.score_job("I know Python.", sample_job)
+
+        assert result.score == 80
+        mock_llm.generate_json.assert_called_once()
+
+    def test_plus_syntax_requirement_above_candidate_years_is_rejected(self, mock_llm, sample_job):
+        """'3+ years' genuinely excludes a candidate with only 2 years."""
+        scorer = RelevanceScorer(mock_llm, user_experience_years=2)
+        sample_job.description = "Requires 3+ years of experience with Python."
+
+        result = scorer.score_job("I know Python.", sample_job)
+
+        assert result.score == 0
+        mock_llm.generate_json.assert_not_called()
+
+    def test_experience_tolerance_lets_near_miss_reach_llm(self, mock_llm, sample_job):
+        """A 1-year tolerance lets a '3 years required' posting reach the LLM
+        for a candidate with 2 years, instead of being auto-rejected."""
+        scorer = RelevanceScorer(mock_llm, user_experience_years=2, experience_tolerance_years=1)
+        sample_job.description = "Requires 3 years of experience with Python."
+        mock_llm.generate_json.return_value = {
+            "score": 60,
+            "matching_skills": ["Python"],
+            "missing_skills": [],
+            "reasoning": "Plausible stretch fit.",
+        }
+
+        result = scorer.score_job("I know Python.", sample_job)
+
+        assert result.score == 60
+        mock_llm.generate_json.assert_called_once()
+
+    def test_experience_tolerance_still_rejects_beyond_buffer(self, mock_llm, sample_job):
+        """A 1-year tolerance still auto-rejects a gap larger than the buffer."""
+        scorer = RelevanceScorer(mock_llm, user_experience_years=2, experience_tolerance_years=1)
+        sample_job.description = "Requires 5 years of experience with Python."
+
+        result = scorer.score_job("I know Python.", sample_job)
+
+        assert result.score == 0
+        mock_llm.generate_json.assert_not_called()
+
+
+class TestExtractExperienceRegex:
+    @pytest.fixture
+    def scorer(self):
+        return RelevanceScorer(MagicMock(spec=LLMClient))
+
+    def test_plus_syntax(self, scorer):
+        assert scorer._extract_experience_regex("5+ years of experience required") == (5, True)
+
+    def test_range_uses_upper_bound(self, scorer):
+        assert scorer._extract_experience_regex("3-5 years of experience") == (5, False)
+
+    def test_no_years_mentioned(self, scorer):
+        assert scorer._extract_experience_regex("entry level, no experience required") == (None, False)
+
+    def test_equivalent_experience_suppresses_same_sentence_match(self, scorer):
+        assert scorer._extract_experience_regex(
+            "3 years of experience or equivalent required for this specific role"
+        ) == (None, False)
+
+    def test_unrelated_equivalent_experience_does_not_suppress_real_requirement(self, scorer):
+        """Education boilerplate ("degree or equivalent experience") elsewhere in the
+        description must not blind the filter to an explicit years requirement stated
+        in a different sentence."""
+        description = (
+            "We are looking for a Senior Engineer with 8+ years of professional experience.\n"
+            "Education: Bachelor's degree in Computer Science or equivalent experience."
+        )
+        assert scorer._extract_experience_regex(description) == (8, True)
+
     def test_score_result_empty_keywords(self):
         """Test score with empty keyword list."""
         scorer = FastScorer([])

@@ -1,3 +1,4 @@
+import hashlib
 import json
 import random
 import time
@@ -14,15 +15,25 @@ logger = get_logger(__name__)
 class ExternalSiteSearcher:
     """Searches external company career sites for job postings."""
 
-    def __init__(self, browser_manager: BrowserManager, llm_client: LLMClient) -> None:
+    def __init__(
+        self,
+        browser_manager: BrowserManager,
+        llm_client: LLMClient,
+        max_experience_years: int | None = None,
+    ) -> None:
         """Initialize the ExternalSiteSearcher.
 
         Args:
             browser_manager: Initialized BrowserManager instance.
             llm_client: LLMClient to parse the career site.
+            max_experience_years: Candidate's max years of experience. When set,
+                postings that are clearly above this band (title/level indicates
+                Senior, Staff, Principal, Director, etc.) are dropped during
+                classification instead of being scraped and scored later.
         """
         self.browser = browser_manager
         self.llm = llm_client
+        self.max_experience_years = max_experience_years
 
     def search_site(self, url: str, company_name: str = "Unknown") -> List[JobSearchResult]:
         """Visits an external career site and extracts job postings using LLM.
@@ -81,9 +92,20 @@ class ExternalSiteSearcher:
 
             logger.info(f"Sending {len(filtered_links)} links to LLM for classification.")
 
+            experience_instruction = ""
+            if self.max_experience_years is not None:
+                experience_instruction = (
+                    f"\nThe candidate has a maximum of {self.max_experience_years} years of professional "
+                    "experience. Exclude postings whose title or level indicates a seniority clearly above "
+                    "this band - e.g. Senior, Staff, Principal, Director, VP, Head of, Manager, or leveled "
+                    "titles like 'L5', 'IC5', 'M4' that denote senior/staff+ roles at that company. "
+                    "Keep postings with no clear seniority signal, since the title alone is often ambiguous.\n"
+                )
+
             prompt = (
                 "Identify which of the following links are specific job postings (not generic career pages, "
                 "login pages, privacy policies, or about pages). "
+                f"{experience_instruction}"
                 "Return a JSON list of objects with 'title' (extracted or cleaned from the link text) "
                 "and 'url' (the exact href). Only include actual job postings. If none, return [].\n\n"
                 f"Links:\n{json.dumps(filtered_links, indent=2)}"
@@ -95,8 +117,11 @@ class ExternalSiteSearcher:
                     job_url: str = item.get("url", "")
                     title: str = item.get("title", "")
                     if job_url and title:
-                        # Create a deterministic ID from the URL hash
-                        job_id = f"ext-{abs(hash(job_url))}"
+                        # Deterministic ID from the URL. Python's built-in hash() is
+                        # randomized per-process (PYTHONHASHSEED), so it would assign a
+                        # different id to the same job on every run and break caching/
+                        # dedup; sha256 is stable across runs.
+                        job_id = f"ext-{hashlib.sha256(job_url.encode()).hexdigest()[:16]}"
                         results.append(
                             JobSearchResult(
                                 id=job_id,

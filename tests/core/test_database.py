@@ -109,6 +109,19 @@ class TestDatabaseManager:
         job = db.get_job("status1")
         assert job["status"] == "interviewing"
 
+    def test_update_job_status_stamps_applied_at(self, db):
+        """Marking a job applied should record when, and reverting should clear it."""
+        db.save_job({"id": "applied1", "title": "Job 1", "status": "new"})
+        assert db.get_job("applied1")["applied_at"] is None
+
+        db.update_job_status("applied1", "applied")
+        job = db.get_job("applied1")
+        assert job["status"] == "applied"
+        assert job["applied_at"] is not None
+
+        db.update_job_status("applied1", "to_apply")
+        assert db.get_job("applied1")["applied_at"] is None
+
     def test_get_all_analyses(self, db):
         """Test retrieving jobs with analysis data."""
         db.save_job({"id": "an1", "title": "Job 1"})

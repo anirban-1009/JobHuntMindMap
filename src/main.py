@@ -41,7 +41,7 @@ def search(config, headless, external_only):
 
 @cli.command()
 @click.option("--config", default="config.yaml", help="Path to config file")
-@click.option("--headless", is_flag=True, default=False, help="Run in headless mode")
+@click.option("--headless", is_flag=True, default=True, help="Run in headless mode")
 @click.option("--limit", default=None, type=int, help="Limit number of jobs")
 @click.option("--force", is_flag=True, default=False, help="Force re-scrape")
 @click.option("--min-fast-score", type=int, default=0, help="Minimum initial NLP score (0-100)")
@@ -96,7 +96,7 @@ def notify(config, min_score):
 @click.option("--config", default="config.yaml")
 @click.argument("job_id")
 @click.option("--name", default=None)
-@click.option("--max-chars", default=300, type=int, help="Maximum characters for the message")
+@click.option("--max-chars", default=200, type=int, help="Maximum characters for the message")
 def refer(config, job_id, name, max_chars):
     """Generate referral request for a job."""
     app = MindMapApp(config)

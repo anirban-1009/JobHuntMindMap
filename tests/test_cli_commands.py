@@ -1,6 +1,5 @@
 import json
 import pathlib
-import shutil
 from typing import Generator
 from unittest.mock import MagicMock, patch
 
@@ -13,25 +12,20 @@ from src.main import cli
 
 
 @pytest.fixture(autouse=True)
-def clean_data_env() -> Generator[None, None, None]:
-    """Ensure a clean 'data' directory environment for each test."""
-    data_dir = pathlib.Path("data")
+def clean_data_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """Give each test an isolated cwd with a fresh 'data' directory.
 
-    def _cleanup():
-        if data_dir.exists():
-            for item in data_dir.iterdir():
-                if item.name == ".gitkeep" or item.name.lower() in ["connections.csv", "resume.json"]:
-                    continue
-                if item.is_dir():
-                    shutil.rmtree(item)
-                else:
-                    item.unlink()
-        else:
-            data_dir.mkdir(parents=True, exist_ok=True)
-
-    _cleanup()
+    This used to operate on the cwd-relative "data" directory directly and
+    delete everything inside it (except a couple of filenames) before and
+    after every test. Running pytest from the repo root - the normal case -
+    made that resolve to the project's real data/ directory and silently wipe
+    data/jobs.db. Chdir-ing into a per-test tmp_path keeps every relative
+    "data/..." path the tests use fully isolated from the real project data,
+    regardless of the invocation cwd.
+    """
+    monkeypatch.chdir(tmp_path)
+    pathlib.Path("data").mkdir(parents=True, exist_ok=True)
     yield
-    _cleanup()
 
 
 @pytest.fixture

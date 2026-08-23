@@ -24,16 +24,29 @@ class ScoringResult:
 class RelevanceScorer:
     """Scores job listings against a user resume using AI."""
 
-    def __init__(self, llm_client: LLMClient, user_experience_years: Optional[int] = None):
+    def __init__(
+        self,
+        llm_client: LLMClient,
+        user_experience_years: Optional[int] = None,
+        experience_tolerance_years: int = 0,
+    ):
         """
         Initialize the RelevanceScorer.
 
         Args:
             llm_client: An instance of LLMClient to use for analysis.
             user_experience_years: Maximum years of experience candidate has.
+            experience_tolerance_years: How many years above user_experience_years
+                a posting's stated requirement may still exceed before the regex
+                pre-filter auto-rejects it. Postings within this buffer are passed
+                to the LLM instead, which can judge a plausible stretch fit rather
+                than a blunt cutoff killing every near-miss (e.g. "3 years"
+                required listings when the candidate has 2, which are common
+                padding/aspirational requirements rather than hard requirements).
         """
         self.llm = llm_client
         self.user_experience_years = user_experience_years
+        self.experience_tolerance_years = experience_tolerance_years
 
     def _extract_experience_regex(self, text: Optional[str]) -> tuple[Optional[int], bool]:
         """
@@ -51,16 +64,32 @@ class RelevanceScorer:
         if not text:
             return None, False
 
-        # First check for "equivalent experience" or similar - these should NOT
-        # trigger rejection as they don't specify a concrete year requirement
-        equivalent_pattern = r"\bequivalent\b.*\bexperience\b|\bexperience\b.*\bequivalent\b|\bor\b\s+equivalent\b"
-        if re.search(equivalent_pattern, text, re.IGNORECASE):
-            return None, False
+        # "Equivalent experience" phrasing (e.g. "Bachelor's degree or equivalent
+        # experience") is common boilerplate for education requirements and is
+        # unrelated to any years-of-experience number stated elsewhere in the
+        # description. Only suppress a match when "equivalent" appears near that
+        # specific match, not anywhere in the whole text - otherwise a single
+        # unrelated "or equivalent experience" mention would disable the filter
+        # for the entire posting, even when a clear "5+ years" requirement is
+        # stated elsewhere.
+        equivalent_pattern = r"\bequivalent\b"
+        sentence_boundary = re.compile(r"[.!?\n;]")
+
+        def has_nearby_equivalent(match: re.Match) -> bool:
+            # Look for "equivalent" within the same sentence as the years match,
+            # rather than the whole text, so unrelated mentions elsewhere in the
+            # description don't suppress an unambiguous years requirement.
+            preceding = sentence_boundary.finditer(text, 0, match.start())
+            start = max((m.end() for m in preceding), default=0)
+            following = sentence_boundary.search(text, match.end())
+            end = following.start() if following else len(text)
+            return bool(re.search(equivalent_pattern, text[start:end], re.IGNORECASE))
 
         # Pattern captures: primary number, optional + indicator, optional range upper
         pattern = r"(\d{1,2})(\+)?\s*(?:(?:to|-)\s*(\d{1,2}))?\s*(?:years?|yrs?)\s*(?:of\s*)?(?:[\w\s]{0,20})?(?:experience|exp)"
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            if has_nearby_equivalent(match):
+                continue
             primary = int(match.group(1))
             has_plus = match.group(2) is not None
             upper = match.group(3)
@@ -71,8 +100,9 @@ class RelevanceScorer:
 
         # Fallback: check for just a number followed by years/exp at end (no "experience" keyword)
         simple_pattern = r"(\d{1,2})(\+)?\s*(?:years?|yrs?)\b"
-        simple_match = re.search(simple_pattern, text, re.IGNORECASE)
-        if simple_match:
+        for simple_match in re.finditer(simple_pattern, text, re.IGNORECASE):
+            if has_nearby_equivalent(simple_match):
+                continue
             return int(simple_match.group(1)), simple_match.group(2) is not None
 
         return None, False
@@ -90,13 +120,18 @@ class RelevanceScorer:
         """
         extracted_exp, is_plus_syntax = self._extract_experience_regex(job_details.description)
 
-        # 1. Regex pre-filtering for experience
+        # 1. Regex pre-filtering for experience. A tolerance buffer lets postings
+        # asking for a modest stretch above the candidate's years still reach the
+        # LLM (aspirational/padded requirements are common), while a bigger gap
+        # is auto-rejected without spending an LLM call.
         if extracted_exp is not None and self.user_experience_years is not None:
+            effective_limit = self.user_experience_years + self.experience_tolerance_years
             if is_plus_syntax:
-                # "5+ years" means strictly more than 5, so candidate needs > 5 years
-                if self.user_experience_years <= extracted_exp:
+                # "5+ years" means 5 or more, so a candidate with exactly 5 years
+                # still qualifies - only reject when they fall short of the floor.
+                if effective_limit < extracted_exp:
                     logger.info(
-                        f"Regex filter caught job '{job_details.title}': requires {extracted_exp}+ years, candidate has {self.user_experience_years}."
+                        f"Regex filter caught job '{job_details.title}': requires {extracted_exp}+ years, candidate has {self.user_experience_years} (+{self.experience_tolerance_years} tolerance)."
                     )
                     return ScoringResult(
                         score=0,
@@ -105,10 +140,10 @@ class RelevanceScorer:
                         reasoning=f"Regex filter: Job requires {extracted_exp}+ years of experience, but candidate has a maximum of {self.user_experience_years} years.",
                         required_experience_years=extracted_exp,
                     )
-            elif extracted_exp > self.user_experience_years:
+            elif extracted_exp > effective_limit:
                 # For ranges like "3-5 years", upper bound > candidate experience
                 logger.info(
-                    f"Regex filter caught job '{job_details.title}': requires {extracted_exp} years, candidate has {self.user_experience_years}."
+                    f"Regex filter caught job '{job_details.title}': requires {extracted_exp} years, candidate has {self.user_experience_years} (+{self.experience_tolerance_years} tolerance)."
                 )
                 return ScoringResult(
                     score=0,
@@ -162,7 +197,19 @@ Analyze the suitability of this candidate for the following job.
 {job_details.description}
 """
         if self.user_experience_years is not None:
-            prompt += f"\n### Candidate Experience Context:\nIMPORTANT: The candidate has a maximum of **{self.user_experience_years} years** of professional experience. If the job explicitly requires strictly MORE than {self.user_experience_years} years of overall experience (e.g., requires 5+ years but the candidate has {self.user_experience_years}), the candidate is unqualified. Heavily penalize the score (score < 30).\n"
+            tolerance = self.experience_tolerance_years
+            stretch_note = (
+                f" A requirement up to {tolerance} year(s) above this is a plausible stretch - "
+                "weigh it against skill match rather than auto-penalizing."
+                if tolerance
+                else ""
+            )
+            prompt += (
+                f"\n### Candidate Experience Context:\nIMPORTANT: The candidate has **{self.user_experience_years} years** "
+                f"of professional experience.{stretch_note} If the job requires meaningfully more overall experience than "
+                f"the candidate has (accounting for the stretch above), the candidate is unqualified. Heavily penalize the "
+                "score (score < 30).\n"
+            )
 
         prompt += """
 ### Evaluation Criteria:

@@ -52,5 +52,5 @@ To automate the daily email digest and vault update:
 ## Prerequisites Checklist
 - [ ] Python 3.13+ installed.
 - [ ] Obsidian installed.
-- [ ] LaTeX installed (`mactex` on Mac, `miktex` on Windows) for resume generation.
+- [ ] LaTeX installed (`basictex` on Mac, `miktex` on Windows) for resume generation.
 - [ ] Chrome/Firefox installed (for Playwright).

@@ -1,3 +1,11 @@
+---
+type: gap-analysis
+tag: {{ (tag if tag else "All Jobs") | yaml }}
+min_score: {{ min_score }}
+generated: {{ generated_at | yaml }}
+tags:
+  - gap-analysis
+---
 # Gap Analysis Report: {{ tag if tag else "All Jobs" }}
 
 - **Threshold:** Scored >= {{ min_score }}

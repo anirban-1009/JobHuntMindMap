@@ -8,17 +8,19 @@ from colorama import Fore, Style
 class ColoredFormatter(logging.Formatter):
     """Custom formatter for colored console output."""
 
+    TIME_PREFIX = Fore.BLACK + Style.BRIGHT + "%(asctime)s" + Style.RESET_ALL + " "
+
     FORMATS = {
-        logging.DEBUG: Fore.CYAN + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
-        logging.INFO: Fore.GREEN + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
-        logging.WARNING: Fore.YELLOW + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
-        logging.ERROR: Fore.RED + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
-        logging.CRITICAL: Fore.RED + Style.BRIGHT + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
+        logging.DEBUG: TIME_PREFIX + Fore.CYAN + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
+        logging.INFO: TIME_PREFIX + Fore.GREEN + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
+        logging.WARNING: TIME_PREFIX + Fore.YELLOW + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
+        logging.ERROR: TIME_PREFIX + Fore.RED + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
+        logging.CRITICAL: TIME_PREFIX + Fore.RED + Style.BRIGHT + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
     }
 
     def format(self, record):
         log_fmt = self.FORMATS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt)
+        formatter = logging.Formatter(log_fmt, datefmt="%H:%M:%S")
         return formatter.format(record)
 
 
