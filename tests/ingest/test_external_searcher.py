@@ -41,7 +41,7 @@ class TestExternalSiteSearcher:
 
         # Recompute in a fresh subprocess (fresh PYTHONHASHSEED) to prove the id
         # doesn't depend on the randomized hash() of the current process.
-        script = "import hashlib; " f"print('ext-' + hashlib.sha256({job_url!r}.encode()).hexdigest()[:16])"
+        script = f"import hashlib; print('ext-' + hashlib.sha256({job_url!r}.encode()).hexdigest()[:16])"
         other_process_id = subprocess.check_output([sys.executable, "-c", script]).decode().strip()
 
         assert job_id == other_process_id
