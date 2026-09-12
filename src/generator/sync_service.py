@@ -281,16 +281,25 @@ class SyncService:
                         logger.warning(f"Could not remove stale duplicate {old_path}: {e}")
 
         # 3. Sync Companies
+        db_companies = {}
+        if self.extractor.db:
+            for c in self.extractor.db.get_all_companies(limit=5000):
+                db_companies[c["name"].lower()] = c
+                db_companies[c["id"]] = c
+
         all_companies = set(list(company_to_jobs.keys()) + list(company_to_people.keys()))
         for co in all_companies:
             co_jobs = []
             if co in company_to_jobs:
                 for j in company_to_jobs[co]:
+                    link_val = getattr(j["details"], "link", "") or getattr(j["details"], "apply_link", "")
                     co_jobs.append(
                         {
                             "title": j["details"].title,
                             "filename": f"{j['details'].title} - {j['details'].company}",
                             "status": "Active",
+                            "score": j["score"].score if hasattr(j.get("score"), "score") else j.get("score"),
+                            "link": link_val,
                         }
                     )
 
@@ -300,10 +309,49 @@ class SyncService:
             co_people = []
             if co in company_to_people:
                 for p in company_to_people[co]:
-                    co_people.append({"name": p.full_name, "filename": f"{p.full_name}", "title": p.position})
+                    co_people.append(
+                        {
+                            "name": p.full_name,
+                            "filename": f"{p.full_name}",
+                            "title": p.position,
+                            "role_type": NetworkGraphBuilder.classify_role(p.position),
+                        }
+                    )
 
-            content = self.template_manager.render_company(name=co, jobs=co_jobs, people=co_people)
+            eval_info = db_companies.get(co.lower()) or {}
+            eval_data = eval_info.get("evaluation_data") or {}
+            content = self.template_manager.render_company(
+                name=co,
+                jobs=co_jobs,
+                people=co_people,
+                score=eval_info.get("score", 0),
+                action_cluster=eval_info.get("action_cluster", "Watchlist"),
+                domain_cluster=eval_info.get("domain_cluster", "General Tech & Services"),
+                recommended_action=eval_info.get("recommended_action") or eval_data.get("recommended_action", ""),
+                target_tier=eval_info.get("target_tier", "Standard"),
+                status=eval_info.get("status", "new"),
+                breakdown=eval_data,
+            )
             self.vault_manager.write_file(content, f"{co}.md", "companies")
+
+        # 4. Generate Company Clusters Hub Note (only if there are synced jobs)
+        if jobs and self.extractor.db:
+            clusters = {"Warm Outreach": [], "Direct Apply": [], "Network Nurture": [], "Watchlist": []}
+            seen_hub_ids = set()
+            for c_info in self.extractor.db.get_all_companies(limit=5000):
+                cid = c_info.get("id")
+                if cid in seen_hub_ids:
+                    continue
+                seen_hub_ids.add(cid)
+                c_action = c_info.get("action_cluster", "Watchlist")
+                if c_action in clusters:
+                    clusters[c_action].append(c_info)
+                else:
+                    clusters.setdefault("Watchlist", []).append(c_info)
+
+            hub_content = self.template_manager.render_company_clusters_hub(clusters)
+            if isinstance(hub_content, str):
+                self.vault_manager.write_file(hub_content, "00_Company_Clusters.md", "companies")
 
     def _index_existing_job_notes(self) -> Dict[str, Dict[str, Any]]:
         """Maps job_id -> {"frontmatter": dict, "paths": [Path, ...]} for job notes already in

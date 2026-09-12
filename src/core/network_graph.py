@@ -120,33 +120,140 @@ class NetworkGraphBuilder:
         """
         if not job.company:
             return []
+        return self.find_matches_for_company(job.company)
 
-        # Normalize and sanitize job company for matching
-        job_company = self._sanitize_for_search(self.parser._normalize_company(job.company))
+    def find_matches_for_company(self, company_name: str) -> List[Connection]:
+        """
+        Finds connections working at a specific company using robust token matching.
+
+        Args:
+            company_name: Target company name.
+
+        Returns:
+            List[Connection]: List of matching connections.
+        """
+        if not company_name:
+            return []
+
+        target_norm = self._normalize_for_matching(company_name)
+        if not target_norm:
+            return []
 
         matches = []
         for conn in self.connections:
-            if conn.company:
-                conn_company = self._sanitize_for_search(conn.company)
-                # Sanitized fuzzy-ish match: contains
-                if job_company in conn_company or conn_company in job_company:
-                    matches.append(conn)
+            if not conn.company:
+                continue
+            conn_norm = self._normalize_for_matching(conn.company)
+            if self._is_company_match(target_norm, conn_norm):
+                matches.append(conn)
 
         return matches
 
+    def _normalize_for_matching(self, name: str) -> str:
+        """Strips legal entity suffixes and punctuation for clean matching."""
+        if not name:
+            return ""
+        s = name.strip()
+        s = re.sub(r"(?i)\b(inc|llc|pvt|ltd|technologies|solutions|services|corporation|corp|group)\b\.?", "", s)
+        s = re.sub(r"[^a-zA-Z0-9\s]", " ", s)
+        return " ".join(s.lower().split())
+
+    def _is_company_match(self, clean1: str, clean2: str) -> bool:
+        """Determines if two normalized company names represent the same company."""
+        if not clean1 or not clean2:
+            return False
+        if clean1 == clean2:
+            return True
+
+        # Punctuation/spacing collapsed match (e.g. Build-It vs BuildIt)
+        s1 = self._sanitize_for_search(clean1)
+        s2 = self._sanitize_for_search(clean2)
+        if s1 and s2 and s1 == s2:
+            return True
+
+        words1 = clean1.split()
+        words2 = clean2.split()
+        set1, set2 = set(words1), set(words2)
+
+        # Subset match on significant words (> 2 chars)
+        sig1 = {w for w in set1 if len(w) > 2}
+        sig2 = {w for w in set2 if len(w) > 2}
+        if sig1 and sig2 and (sig1.issubset(sig2) or sig2.issubset(sig1)):
+            return True
+
+        # Word boundary substring match if long enough
+        if len(clean1) >= 4 and re.search(r"\b" + re.escape(clean1) + r"\b", clean2):
+            return True
+        if len(clean2) >= 4 and re.search(r"\b" + re.escape(clean2) + r"\b", clean1):
+            return True
+
+        return False
+
+    @staticmethod
+    def classify_role(position: Optional[str]) -> str:
+        """
+        Classifies a connection's position into strategic outreach categories:
+        - 'talent': Recruiters, sourcers, HR talent partners (highest conversion for fast referral/screening)
+        - 'engineering_lead': Engineering managers, leads, directors, CTOs (hiring decision makers)
+        - 'peer_engineer': AI/ML engineers, data scientists, software engineers (peer referral candidates)
+        - 'other': Other business functions
+        """
+        if not position:
+            return "other"
+        pos = position.lower()
+
+        talent_keywords = [
+            "recruiter",
+            "talent",
+            "sourcer",
+            "people partner",
+            "staffing",
+            "human resources",
+            "talent acquisition",
+        ]
+        if any(kw in pos for kw in talent_keywords):
+            return "talent"
+
+        lead_keywords = [
+            "engineering manager",
+            "tech lead",
+            "lead engineer",
+            "director",
+            "head of",
+            "principal",
+            "founder",
+            "co-founder",
+            "vp",
+            "chief",
+            "cto",
+            "architect",
+        ]
+        if any(kw in pos for kw in lead_keywords):
+            return "engineering_lead"
+
+        peer_keywords = [
+            "ai",
+            "machine learning",
+            "ml",
+            "deep learning",
+            "nlp",
+            "computer vision",
+            "software engineer",
+            "sde",
+            "data scientist",
+            "data engineer",
+            "researcher",
+            "developer",
+        ]
+        if any(kw in pos for kw in peer_keywords):
+            return "peer_engineer"
+
+        return "other"
+
     def _sanitize_for_search(self, text: str) -> str:
-        """
-        Removes all non-alphanumeric characters for robust string comparison.
-
-        Args:
-            text: The string to sanitize.
-
-        Returns:
-            A lowercase string containing only alphanumeric characters.
-        """
+        """Legacy helper maintained for backward compatibility."""
         if not text:
             return ""
-        # Keep only alphanumeric characters
         sanitized = re.sub(r"[^a-zA-Z0-9]", "", text)
         return sanitized.lower()
 

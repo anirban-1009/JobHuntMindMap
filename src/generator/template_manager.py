@@ -118,8 +118,15 @@ class TemplateManager:
         industry: str = "Unknown",
         location: str = "Unknown",
         website: str = "",
-        jobs: Optional[List[Dict[str, str]]] = None,
-        people: Optional[List[Dict[str, str]]] = None,
+        jobs: Optional[List[Dict[str, Any]]] = None,
+        people: Optional[List[Dict[str, Any]]] = None,
+        score: int = 0,
+        action_cluster: str = "Watchlist",
+        domain_cluster: str = "General Tech & Services",
+        recommended_action: str = "",
+        target_tier: str = "Standard",
+        status: str = "new",
+        breakdown: Optional[Dict[str, Any]] = None,
     ) -> str:
         """
         Renders the Company.md template.
@@ -129,14 +136,22 @@ class TemplateManager:
             industry: Industry name.
             location: Company location.
             website: Company website URL.
-            jobs: List of job dictionaries (title, filename, status).
-            people: List of person dictionaries (name, filename, title).
+            jobs: List of job dictionaries (title, filename, status, score, link).
+            people: List of person dictionaries (name, filename, title, role_type).
+            score: Evaluated company score (0-100).
+            action_cluster: Strategic action cluster.
+            domain_cluster: Domain / specialization cluster.
+            recommended_action: Actionable next step.
+            target_tier: Target priority tier.
+            status: Company status.
+            breakdown: Scoring breakdown dict.
 
         Returns:
             Rendered Markdown string.
         """
         jobs = jobs or []
         people = people or []
+        breakdown = breakdown or {}
         template = self.env.get_template("Company.md.j2")
         return template.render(
             name=name,
@@ -145,6 +160,30 @@ class TemplateManager:
             website=website,
             jobs=jobs,
             people=people,
+            score=score,
+            action_cluster=action_cluster,
+            domain_cluster=domain_cluster,
+            recommended_action=recommended_action,
+            target_tier=target_tier,
+            status=status,
+            breakdown=breakdown,
+        )
+
+    def render_company_clusters_hub(
+        self,
+        clusters: Dict[str, List[Dict[str, Any]]],
+        updated_at: Optional[str] = None,
+    ) -> str:
+        """
+        Renders the CompanyClustersHub.md template grouping companies by action cluster.
+        """
+        import datetime
+
+        ts = updated_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        template = self.env.get_template("CompanyClustersHub.md.j2")
+        return template.render(
+            clusters=clusters,
+            updated_at=ts,
         )
 
     def render_person(

@@ -1,22 +1,59 @@
 ---
 type: company
 name: {{ name | yaml }}
+score: {{ score | default(0) }}
+action_cluster: {{ action_cluster | default("Watchlist") | yaml }}
+domain_cluster: {{ domain_cluster | default("General Tech & Services") | yaml }}
+target_tier: {{ target_tier | default("Standard") | yaml }}
+job_count: {{ jobs|length }}
+connection_count: {{ people|length }}
 industry: {{ industry | yaml }}
 location: {{ location | yaml }}
 website: {{ website | yaml }}
+status: {{ status | default("new") | yaml }}
 tags:
   - company
+  - {{ (action_cluster or "Watchlist") | replace(' ', '_') }}
+  - {{ (domain_cluster or "General") | replace(' ', '_') }}
 ---
-# {{ name }}
+# {{ name }} (Score: {{ score | default(0) }}/100)
 
-## Jobs
+> [!INFO] **Action Tier: {{ action_cluster | default("Watchlist") }}** · **Domain: {{ domain_cluster | default("General Tech") }}** · **Tier: {{ target_tier | default("Standard") }}**
+> **Directive:** {{ recommended_action | default("Review opportunities and network.") }}
+
+## Score Breakdown
+- **Job Opportunity Quality (45%):** {{ breakdown.job_fit_score | default(0) }}/100
+- **Company Profile & Domain Fit (35%):** {{ breakdown.company_fit_score | default(0) }}/100
+- **Network Leverage (20%):** {{ breakdown.network_score | default(0) }}/100
+
+## Action Checklist
+{% if action_cluster == "Warm Outreach" %}
+- [ ] 1. Review network contacts below and select primary referral candidate.
+- [ ] 2. Send personalized LinkedIn referral request message.
+- [ ] 3. After referral submission or intro, submit tailored application for target role.
+{% elif action_cluster == "Direct Apply" %}
+- [ ] 1. Submit application directly via company careers portal.
+- [ ] 2. Identify engineering manager / technical recruiter on LinkedIn.
+- [ ] 3. Send direct follow-up message referencing applied role.
+{% elif action_cluster == "Network Nurture" %}
+- [ ] 1. Send friendly check-in or informational chat request to connection.
+- [ ] 2. Keep resume / profile updated for upcoming openings.
+{% else %}
+- [ ] Monitor career page periodically for matching roles.
+{% endif %}
+
+## Open Opportunities
 {% for job in jobs %}
-- [[{{ job.filename }}|{{ job.title }}]] ({{ job.status }})
+- [[{{ job.filename }}|{{ job.title }}]] ({{ job.status }}){% if job.score %} · Match Score: **{{ job.score }}**{% endif %}{% if job.link %} · [Apply Link]({{ job.link }}){% endif %}
+{% else %}
+- No open jobs currently in cache.
 {% endfor %}
 
-## Connections
+## Network & Referral Contacts
 {% for person in people %}
-- [[{{ person.filename }}|{{ person.name }}]] - {{ person.title }}
+- [[{{ person.filename }}|{{ person.name }}]] - {{ person.title }}{% if person.role_type and person.role_type != 'other' %} `[{{ person.role_type|upper }}]`{% endif %}
+{% else %}
+- No direct connections found at this company.
 {% endfor %}
 
 ## Notes

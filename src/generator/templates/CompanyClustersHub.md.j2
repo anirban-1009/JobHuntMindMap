@@ -1,0 +1,63 @@
+---
+type: hub
+title: "Company Clusters & Outreach Strategy"
+updated_at: {{ updated_at | yaml }}
+tags:
+  - company_clusters
+  - outreach_strategy
+---
+# 🎯 Company Clusters & Outreach Hub
+
+This hub organizes all evaluated companies into strategic action tiers to prioritize applications and referral requests.
+
+---
+
+## 🔥 Warm Outreach (Referral Priority)
+*Companies with strong role fit and verified connections. Request an internal referral before applying.*
+
+| Company | Score | Jobs (High Match) | Connections (Key) | Domain | Recommended Action |
+| :--- | :---: | :---: | :---: | :--- | :--- |
+{% for c in clusters["Warm Outreach"] %}
+| [[{{ c.name }}]] | **{{ c.score }}** | {{ c.job_count }} ({{ c.high_match_job_count }}) | {{ c.connection_count }} ({{ c.key_connection_count }}) | {{ c.domain_cluster }} | {{ c.recommended_action }} |
+{% else %}
+*No companies in this tier.*
+{% endfor %}
+
+---
+
+## ⚡ Direct Apply & Cold Outreach
+*Companies with high job fit, but no direct internal network. Apply directly on careers site and initiate cold outreach to team leads.*
+
+| Company | Score | Jobs (High Match) | Domain | Recommended Action |
+| :--- | :---: | :---: | :--- | :--- |
+{% for c in clusters["Direct Apply"] %}
+| [[{{ c.name }}]] | **{{ c.score }}** | {{ c.job_count }} ({{ c.high_match_job_count }}) | {{ c.domain_cluster }} | {{ c.recommended_action }} |
+{% else %}
+*No companies in this tier.*
+{% endfor %}
+
+---
+
+## 🌱 Network Nurture
+*Companies where you have connections, but no active high-matching roles open right now. Keep in touch for future pipeline.*
+
+| Company | Score | Connections (Key) | Domain | Recommended Action |
+| :--- | :---: | :---: | :--- | :--- |
+{% for c in clusters["Network Nurture"][:40] %}
+| [[{{ c.name }}]] | **{{ c.score }}** | {{ c.connection_count }} ({{ c.key_connection_count }}) | {{ c.domain_cluster }} | {{ c.recommended_action }} |
+{% else %}
+*No companies in this tier.*
+{% endfor %}
+
+---
+
+## 📋 Watchlist
+*Lower match or exploratory companies to monitor periodically.*
+
+| Company | Score | Jobs | Domain |
+| :--- | :---: | :---: | :--- |
+{% for c in clusters["Watchlist"][:30] %}
+| [[{{ c.name }}]] | {{ c.score }} | {{ c.job_count }} | {{ c.domain_cluster }} |
+{% else %}
+*No companies in watchlist.*
+{% endfor %}
