@@ -7,6 +7,7 @@ from click.testing import CliRunner
 
 from src.core.relevance_scorer import ScoringResult
 from src.main import (
+    _get_version,
     analyze_gaps,
     check,
     cli,
@@ -16,7 +17,7 @@ from src.main import (
     score,
     scrape,
     search,
-    test_ai,
+    test_ai as cmd_test_ai,
 )
 
 
@@ -59,6 +60,24 @@ class TestMainCLI:
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         assert "Job Hunt Mindmap CLI" in result.output
+
+    def test_cli_version(self, runner: CliRunner) -> None:
+        """Verify that the CLI --version option returns version info."""
+        result = runner.invoke(cli, ["--version"])
+        assert result.exit_code == 0
+        assert "mindmap" in result.output
+
+    def test_get_version_success(self) -> None:
+        """Verify _get_version returns package version when found."""
+        with patch("importlib.metadata.version", return_value="1.2.3"):
+            assert _get_version() == "1.2.3"
+
+    def test_get_version_not_found(self) -> None:
+        """Verify _get_version returns fallback when PackageNotFoundError occurs."""
+        import importlib.metadata
+
+        with patch("importlib.metadata.version", side_effect=importlib.metadata.PackageNotFoundError):
+            assert _get_version() == "0.0.0-dev"
 
     def test_check_valid_config(self, runner: CliRunner, mock_config: str) -> None:
         """Verify the 'check' command validates a correct configuration file."""
@@ -162,7 +181,7 @@ class TestMainCLI:
         mock_client = mock_get_llm.return_value
         mock_client.generate.return_value = "Hello form AI"
 
-        result = runner.invoke(test_ai, ["--config", mock_config])
+        result = runner.invoke(cmd_test_ai, ["--config", mock_config])
 
         assert result.exit_code == 0
         assert "AI Response" in result.output

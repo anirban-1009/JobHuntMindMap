@@ -123,7 +123,7 @@ class BrowserManager:
 
         try:
             # Check if likely already logged in (cookies worked)
-            if self.page.locator(success_selector).count() > 0:
+            if self.page and self.page.locator(success_selector).count() > 0:
                 logger.info("Already logged in!")
                 return
 
@@ -131,11 +131,12 @@ class BrowserManager:
             logger.info("The script will wait until it detects you are logged in...")
 
             # Wait for user to log in
-            self.page.wait_for_selector(success_selector, timeout=300000)  # 5 minutes
+            if self.page:
+                self.page.wait_for_selector(success_selector, timeout=300000)
             logger.info("Login detected!")
 
             # State will be saved on stop() or we can force it now
-            if self.session_path:
+            if self.session_path and self.context:
                 self.context.storage_state(path=str(self.session_path))
                 logger.info("Session saved!")
 

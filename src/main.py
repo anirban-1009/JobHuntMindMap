@@ -1,3 +1,5 @@
+import importlib.metadata
+
 import click
 from colorama import Fore, init
 
@@ -7,7 +9,16 @@ from src.utils.logger import setup_logging
 init(autoreset=True)
 
 
+def _get_version() -> str:
+    """Returns the installed package version, falling back to a dev placeholder."""
+    try:
+        return importlib.metadata.version("job-hunt-mindmap")
+    except importlib.metadata.PackageNotFoundError:
+        return "0.0.0-dev"
+
+
 @click.group()
+@click.version_option(version=_get_version(), prog_name="mindmap")
 def cli():
     """Job Hunt Mindmap CLI"""
     from dotenv import load_dotenv

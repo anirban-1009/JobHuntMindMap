@@ -1,10 +1,9 @@
 import re
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from src.core.ai import LLMClient
 from src.ingest.job_details_extractor import JobDetails
-from src.ingest.job_searcher import JobSearchResult
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -242,12 +241,14 @@ class FastScorer:
         """
         self.keywords = [k.lower() for k in keywords]
 
-    def score_result(self, result: JobSearchResult) -> int:
+    def score_result(self, result: Any) -> int:
         """
         Calculates a simple overlap score for a search result.
 
         Args:
-            result: The JobSearchResult to score.
+            result: The job result to score. Only the ``title`` attribute is read,
+                so both ``JobSearchResult`` and lightweight stand-ins (e.g.
+                ``SimpleNamespace`` for cached/discovered jobs) are accepted.
 
         Returns:
             int: A score from 0-100 based on keyword density in title.

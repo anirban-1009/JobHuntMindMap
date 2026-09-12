@@ -112,6 +112,8 @@ class MindMapApp:
                     results = searcher.search(
                         kw, loc, search_cfg.get("filters", {}), search_cfg.get("location_type", "Any")
                     )
+                    if results is None:
+                        break
                     all_results.extend(results)
                     seen_searches.add(search_key)
                     if len(results) >= 15:
@@ -154,6 +156,9 @@ class MindMapApp:
                 logger.info(f"Total unique jobs found: {len(filtered)} (after filtering)")
 
             # Save search results to DB as discovery cache
+            if extractor.db is None:
+                logger.error("Database not available; cannot save search results.")
+                return
             for job in filtered:
                 # We save minimal info; status 'discovered' means JD not yet scraped
                 extractor.db.save_job(
@@ -201,8 +206,9 @@ class MindMapApp:
                     # Run full search across platforms, filtering out already-cached jobs
                     filtered = self._run_searches(browser, external_only=external_only, db=extractor.db)
 
-                # Add previously discovered jobs from DB that haven't been scraped yet
-                discovered_jobs = extractor.db.get_jobs_by_status("discovered")
+                # Add previously discovered jobs from DB that haven't been scraped yet.
+                # Skip when a specific job was requested - only that job should be scraped.
+                discovered_jobs = extractor.db.get_jobs_by_status("discovered") if not job_id and extractor.db else []
                 if discovered_jobs:
                     logger.info(f"Adding {len(discovered_jobs)} previously discovered jobs from cache.")
                     for dj in discovered_jobs:
@@ -289,8 +295,8 @@ class MindMapApp:
                 all_jobs = [
                     j
                     for j in all_jobs
-                    if "Unknown" in j.get("title")
-                    or "Unknown" in j.get("company")
+                    if "Unknown" in (j.get("title") or "")
+                    or "Unknown" in (j.get("company") or "")
                     or not j.get("title")
                     or not j.get("company")
                 ]

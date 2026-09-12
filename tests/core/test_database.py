@@ -1,3 +1,5 @@
+import contextlib
+
 import pytest
 
 from src.core.database import DatabaseManager
@@ -12,11 +14,12 @@ class TestDatabaseManager:
 
     def test_init_db(self, db):
         """Verify fallback tables are created."""
-        with db._get_connection() as conn:
+        with contextlib.closing(db._get_connection()) as conn:
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = [row[0] for row in cursor.fetchall()]
             assert "jobs" in tables
             assert "requests" in tables
+            assert "companies" in tables
 
     def test_save_and_get_job(self, db):
         """Test saving and retrieving a job."""
@@ -121,6 +124,24 @@ class TestDatabaseManager:
 
         db.update_job_status("applied1", "to_apply")
         assert db.get_job("applied1")["applied_at"] is None
+
+    def test_update_job_status_preserves_applied_at_on_reapply(self, db):
+        """Re-applying an already-applied job (e.g. on sync-back) must not overwrite applied_at."""
+        db.save_job({"id": "applied2", "title": "Job 2", "status": "new"})
+
+        db.update_job_status("applied2", "applied")
+        first_applied_at = db.get_job("applied2")["applied_at"]
+        assert first_applied_at is not None
+
+        # Simulate a later sync-back re-applying the same status
+        db.update_job_status("applied2", "applied")
+        assert db.get_job("applied2")["applied_at"] == first_applied_at
+
+        # Reverting to to_apply clears it, so a later re-apply stamps a fresh date
+        db.update_job_status("applied2", "to_apply")
+        assert db.get_job("applied2")["applied_at"] is None
+        db.update_job_status("applied2", "applied")
+        assert db.get_job("applied2")["applied_at"] is not None
 
     def test_get_all_analyses(self, db):
         """Test retrieving jobs with analysis data."""

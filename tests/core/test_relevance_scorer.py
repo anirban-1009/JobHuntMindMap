@@ -177,3 +177,11 @@ class TestExtractExperienceRegex:
         result = JobSearchResult(id="1", title="Python Developer", company="A", link="", location="")
         # matches = 1, total = 1 -> 100 -> min(100, 100+20) = 100
         assert scorer.score_result(result) == 100
+
+    def test_score_result_duck_typing_with_simple_namespace(self):
+        """Test score with duck-typed object (SimpleNamespace) having only title attribute."""
+        from types import SimpleNamespace
+
+        scorer = FastScorer(["Python"])
+        result = SimpleNamespace(title="Python Engineer")
+        assert scorer.score_result(result) == 100

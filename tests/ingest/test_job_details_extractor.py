@@ -367,3 +367,27 @@ class TestJobDetailsExtractor:
         assert result.title == "Fallback Title"
         assert result.company == "Fallback Co"
         assert result.location == "Fallback Loc"
+
+    def test_extract_job_details_no_browser(self, extractor):
+        """Test extract_job_details returns None when browser is None."""
+        extractor.browser = None
+        assert extractor.extract_job_details("123", "http://example.com") is None
+
+    def test_extract_job_details_page_is_none(self, extractor, mock_browser_manager):
+        """Test extract_job_details returns None when browser.page is None."""
+        mock_browser_manager.page = None
+        assert extractor.extract_job_details("123", "http://example.com") is None
+
+    def test_extract_job_details_fallback_null_company(self, extractor, mock_browser_manager):
+        """Test that a fallback_data dictionary with company=None falls back to 'Unknown Company'."""
+        mock_browser_manager.page = None
+        # browser.page is None so it returns None, but let's test company_name_fallback resolution
+        # by letting page navigate
+        mock_page = MagicMock()
+        mock_browser_manager.page = mock_page
+        mock_page.locator.return_value.count.return_value = 0
+
+        fallback_data = {"company": None, "title": "Dev"}
+        result = extractor.extract_job_details("fallback", "http://example.com", fallback_data=fallback_data)
+        assert result is not None
+        assert result.company == "Unknown Company"

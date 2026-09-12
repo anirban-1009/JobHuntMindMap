@@ -105,6 +105,12 @@ class TestJobSearcher:
         with pytest.raises(Exception, match="Network Error"):
             searcher.search("Python", "SF")
 
+    def test_search_page_is_none(self, searcher, mock_browser_manager):
+        """Test search returns None when browser.page is None."""
+        mock_browser_manager.page = None
+        results = searcher.search("Python", "SF")
+        assert results is None
+
     def test_search_parse_error(self, searcher, mock_browser_manager):
         """Test search handles errors while parsing individual job cards."""
         mock_page = mock_browser_manager.page

@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 class ResumeService:
     """Handles resume data extraction and structured management."""
 
-    def __init__(self, llm_client: LLMClient, resume_path: Optional[str] = None):
+    def __init__(self, llm_client: Optional[LLMClient] = None, resume_path: Optional[str] = None):
         """
         Initialize the ResumeService.
 
@@ -44,6 +44,9 @@ class ResumeService:
 
         # 2. Parse PDF if available
         if self.resume_path and self.resume_path.exists():
+            if not self.llm:
+                logger.warning("No LLM client available to parse resume PDF.")
+                return {}
             return self._parse_pdf_to_json()
 
         logger.error("No resume data found and no PDF path provided/exists.")
@@ -51,10 +54,13 @@ class ResumeService:
 
     def _parse_pdf_to_json(self) -> Dict[str, Any]:
         """Parses PDF and uses LLM to structure the content."""
+        if not self.llm:
+            logger.warning("No LLM client available to parse resume PDF.")
+            return {}
         try:
             logger.info(f"Parsing resume PDF from {self.resume_path}...")
             parser = PDFResumeParser()
-            resume_text = parser.extract_text(self.resume_path)
+            resume_text = parser.extract_text(self.resume_path) if self.resume_path else None
 
             prompt = f"""
             You are a data extraction assistant. Convert the following Resume Text into a valid JSON object matching this structure:
@@ -67,10 +73,10 @@ class ResumeService:
               "education": [ {{"institution": "String", "degree": "String", "dates": "String", "location": "String", "description": "String"}} ],
               "skills": {{ "Category": ["Skill"] }}
             }}
-            
+
             RESUME TEXT:
-            {resume_text[:4000]}
-            
+            {(resume_text or "")[:4000]}
+
             Return ONLY valid JSON.
             """
             json_str = self.llm.generate(prompt)
