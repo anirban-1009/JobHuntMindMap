@@ -8,7 +8,10 @@ import yaml
 
 from src.core.ai import get_llm_client
 from src.core.analysis_service import AnalysisService
+from src.core.company_clusterer import CompanyClusterer
+from src.core.company_scorer import CompanyScorer
 from src.core.database import DatabaseManager
+from src.core.network_graph import NetworkGraphBuilder
 from src.core.referral_service import ReferralService
 from src.core.relevance_scorer import FastScorer
 from src.core.resume_service import ResumeService
@@ -36,6 +39,7 @@ class MindMapApp:
         self.config = self._load_config()
         self.session_path = self.project_root / "data" / "session.json"
         self.llm = get_llm_client(self.config.get("ai", {}))
+        self.db = DatabaseManager()
 
         # Service Initialization
         self.resume_service = ResumeService(self.llm, resume_path=self.config.get("user", {}).get("resume_path"))
@@ -558,3 +562,133 @@ class MindMapApp:
                 logger.debug(f"Filtering out job due to keyword match: {title}")
 
         return filtered
+
+    def evaluate_companies(self) -> List[Dict[str, Any]]:
+        """
+        Evaluates and clusters all companies across active jobs and LinkedIn connections.
+        Saves company evaluations to the database and logs a summary breakdown.
+        """
+        logger.info("Starting company evaluation and clustering...")
+        all_jobs = self.db.get_all_jobs(limit=10000)
+
+        # Initialize network builder
+        user_cfg = self.config.get("user", {})
+        conn_path = user_cfg.get("linkedin_connections_path") or self.config.get("network", {}).get("connections_path")
+        connections_path = pathlib.Path(conn_path or "data/Connections.csv")
+        builder = NetworkGraphBuilder(connections_path, metadata_path=user_cfg.get("linkedin_metadata_path"))
+
+        # Group jobs by company
+        company_jobs_map: Dict[str, List[Dict[str, Any]]] = {}
+        for job in all_jobs:
+            c = job.get("company")
+            if c:
+                company_jobs_map.setdefault(c, []).append(job)
+
+        # Include network companies even if no active job in DB
+        for conn in builder.connections:
+            if conn.company:
+                norm_c = builder.parser._normalize_company(conn.company)
+                if norm_c and not any(builder._is_company_match(norm_c, existing) for existing in company_jobs_map):
+                    company_jobs_map.setdefault(norm_c, [])
+
+        scorer = CompanyScorer(self.config)
+        clusterer = CompanyClusterer()
+
+        evaluations = []
+        for company_name, c_jobs in company_jobs_map.items():
+            c_conns = builder.find_matches_for_company(company_name)
+            evaluation = scorer.score_company(company_name, c_jobs, c_conns)
+            evaluations.append(evaluation)
+
+        # Process clusters
+        processed = clusterer.process_evaluations(evaluations, company_jobs_map)
+
+        # Persist to DB
+        for ev in processed:
+            self.db.save_company(ev.to_dict())
+
+        logger.info(f"Successfully evaluated and clustered {len(processed)} companies.")
+
+        # Log summary by cluster
+        cluster_counts = {}
+        for ev in processed:
+            cluster_counts[ev.action_cluster] = cluster_counts.get(ev.action_cluster, 0) + 1
+
+        logger.info("\n=== Company Action Clusters ===")
+        for cname in ("Warm Outreach", "Direct Apply", "Network Nurture", "Watchlist"):
+            count = cluster_counts.get(cname, 0)
+            logger.info(f"  {cname}: {count} companies")
+
+        return [ev.to_dict() for ev in processed]
+
+    def list_companies(
+        self,
+        cluster: Optional[str] = None,
+        min_score: int = 0,
+        limit: int = 25,
+        sort_by: str = "score",
+    ) -> List[Dict[str, Any]]:
+        """
+        Lists companies from the database with filtering and sorting.
+        Auto-runs evaluation if database has not yet been populated.
+        """
+        companies = self.db.get_all_companies(min_score=min_score, action_cluster=cluster, sort_by=sort_by, limit=limit)
+        if not companies and min_score == 0 and not cluster:
+            logger.info("No companies found in database. Running evaluation first...")
+            self.evaluate_companies()
+            companies = self.db.get_all_companies(
+                min_score=min_score, action_cluster=cluster, sort_by=sort_by, limit=limit
+            )
+        return companies
+
+    def get_company_details(self, company_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves detailed company dossier including score breakdown, open jobs,
+        and verified connections with role classifications.
+        """
+        company = self.db.get_company(company_name)
+        if not company:
+            self.evaluate_companies()
+            company = self.db.get_company(company_name)
+            if not company:
+                return None
+
+        # Fetch matching jobs from DB
+        all_jobs = self.db.get_all_jobs(limit=10000)
+        c_norm = company["name"].lower()
+        matching_jobs = [
+            j
+            for j in all_jobs
+            if j.get("company")
+            and (j.get("company").lower() == c_norm or company["id"] in j.get("company").lower().replace(" ", "_"))
+        ]
+        matching_jobs.sort(
+            key=lambda j: (j.get("relevance_score") is not None, j.get("relevance_score") or 0),
+            reverse=True,
+        )
+
+        # Fetch connections
+        user_cfg = self.config.get("user", {})
+        conn_path = user_cfg.get("linkedin_connections_path") or self.config.get("network", {}).get("connections_path")
+        connections_path = pathlib.Path(conn_path or "data/Connections.csv")
+        builder = NetworkGraphBuilder(connections_path, metadata_path=user_cfg.get("linkedin_metadata_path"))
+        conns = builder.find_matches_for_company(company["name"])
+
+        classified_conns = []
+        for c in conns:
+            classified_conns.append(
+                {
+                    "name": c.full_name,
+                    "title": c.position or "Professional",
+                    "role_type": builder.classify_role(c.position),
+                    "connected_on": c.connected_on,
+                }
+            )
+        priority_order = {"talent": 1, "engineering_lead": 2, "peer_engineer": 3, "other": 4}
+        classified_conns.sort(key=lambda c: priority_order.get(c["role_type"], 5))
+
+        return {
+            "company": company,
+            "jobs": matching_jobs,
+            "connections": classified_conns,
+        }
