@@ -142,3 +142,15 @@ class TestMindMapApp:
                 res = app.tailor_resume("123")
                 assert res is not None
                 assert "Resume_" in str(res)
+
+    def test_check_env(self, app, tmp_path):
+        """Test check_env runs environment checks and returns True."""
+        vault_dir = tmp_path / "vault"
+        vault_dir.mkdir()
+        resume_file = tmp_path / "resume.pdf"
+        resume_file.touch()
+
+        app.config["obsidian"] = {"vault_path": str(vault_dir)}
+        app.config["user"]["resume_path"] = str(resume_file)
+
+        assert app.check_env() is True

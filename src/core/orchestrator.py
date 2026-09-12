@@ -1,5 +1,6 @@
 import json
 import pathlib
+import shutil
 import sys
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
@@ -33,11 +34,9 @@ class MindMapApp:
 
     def __init__(self, config_path: str) -> None:
         """Initialize services and load configuration."""
-        self.project_root = pathlib.Path(__file__).parents[2]
         self.config_path = pathlib.Path(config_path)
-
         self.config = self._load_config()
-        self.session_path = self.project_root / "data" / "session.json"
+        self.session_path = pathlib.Path(self.config.get("browser", {}).get("session_path", "data/session.json"))
         self.llm = get_llm_client(self.config.get("ai", {}))
         self.db = DatabaseManager()
 
@@ -74,11 +73,43 @@ class MindMapApp:
                 logger.error(f"Error parsing YAML: {error}")
                 sys.exit(1)
 
-    def check_env(self) -> None:
+    def check_env(self) -> bool:
         """Check if the environment and configuration are valid."""
         logger.info("Checking environment...")
         logger.info("Config file valid.")
+
+        # Check Obsidian Vault
+        vault_path_str = self.config.get("obsidian", {}).get("vault_path")
+        if vault_path_str:
+            vault_path = pathlib.Path(vault_path_str).expanduser()
+            if vault_path.exists():
+                logger.info(f"Obsidian vault directory found: {vault_path}")
+            else:
+                logger.warning(f"Obsidian vault directory does not exist: {vault_path}")
+        else:
+            logger.warning("Obsidian vault_path is not configured in config.yaml.")
+
+        # Check Resume PDF
+        resume_path_str = self.config.get("user", {}).get("resume_path")
+        if resume_path_str:
+            resume_path = pathlib.Path(resume_path_str).expanduser()
+            if resume_path.exists():
+                logger.info(f"Resume PDF found: {resume_path}")
+            else:
+                logger.warning(f"Resume PDF not found: {resume_path}")
+
+        # Check AI Provider
+        ai_provider = self.config.get("ai", {}).get("provider", "gemini")
+        logger.info(f"Configured AI provider: {ai_provider}")
+
+        # Check pdflatex for resume tailoring
+        if shutil.which("pdflatex"):
+            logger.info("pdflatex is installed and available.")
+        else:
+            logger.warning("pdflatex not found in PATH (required for 'mindmap tailor' PDF compilation).")
+
         logger.info("Mindmap is ready to run!")
+        return True
 
     def login(self) -> None:
         """Launch browser for manual platform authentication."""

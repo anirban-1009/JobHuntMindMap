@@ -47,6 +47,11 @@ mindmap = "src.main:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+exclude = [
+  "*.bak",
+  "*.pyc",
+  "__pycache__",
+]
 
 [tool.ruff]
 line-length = 120

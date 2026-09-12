@@ -24,11 +24,12 @@ Before you begin, ensure you have the following installed:
     source .venv/bin/activate  # On Windows: .venv\Scripts\activate
     ```
 
-3.  **Install dependencies**:
+3.  **Install dependencies and package**:
     ```bash
-    pip install .
+    pip install -e .
     playwright install chromium
     ```
+    *(Or install globally as a tool via `pipx install .`)*
 
 ## 2.5. Install LaTeX (for Resume Generation)
 
@@ -51,46 +52,50 @@ Install TeX Live via your package manager, e.g.:
 sudo apt-get install texlive-latex-base texlive-latex-extra texlive-fonts-recommended
 ```
 
-## 3. Configuration
+## 3. Workspace Initialization & Configuration
 
-1.  **Create your config file**:
+1.  **Initialize your workspace**:
     ```bash
-    cp config.sample.yaml config.yaml
+    mindmap init
     ```
+    This automatically creates `config.yaml` from template, creates `data/` and `logs/` directories, and generates a `.env` file.
+
 2.  **Edit `config.yaml`**:
-    - Update `obsidian.vault_path` to point to where you want the vault generated.
+    - Update `obsidian.vault_path` to point to where you want the Obsidian vault generated.
     - Update `user.full_name` and `user.email`.
-    - Place your resume PDF in `data/resume.pdf` (or update the path).
+    - Place your resume PDF in `data/resume.pdf` (or update `user.resume_path`).
+    - Adjust `search.keywords` and `search.location` for your target jobs.
 
 ## 4. Get Your API Keys
 
 ### Google Gemini Key (Required for AI Scoring)
 1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey).
 2. Create a new API key.
-3. Add it to your `config.yaml` under `ai.gemini.api_key` or set it as an environment variable `GEMINI_API_KEY`.
+3. Add it to your `.env` file (`GEMINI_API_KEY=your_key_here`) or in `config.yaml` under `ai.gemini.api_key`.
 
 ### LinkedIn Session (Required for Scraping)
 LinkedIn uses strict anti-bot measures. We use your real session cookies to safely fetch data.
 
 1. Run the login command:
    ```bash
-   python -m src.main login
+   mindmap login
    ```
 2. A browser window will open. **Log in to LinkedIn manually**.
 3. Once you're on the LinkedIn feed, the tool will automatically detect the login, save your session to `data/session.json`, and close the browser.
 
 ## 5. Validating Setup
 
-Run the check command to ensure everything is configured correctly:
+Run the check command to verify your configuration, Obsidian vault path, resume PDF, and environment:
 ```bash
-python -m src.main check
+mindmap check
 ```
+*(Tip: Add `-v` or `--verbose` for detailed debug logging: `mindmap -v check`)*
 
 ## 6. Test AI Connection
 
-Verify that your Gemini API key is working:
+Verify that your Gemini API key and AI provider are connected:
 ```bash
-python -m src.main test-ai
+mindmap test-ai
 ```
 
 ---

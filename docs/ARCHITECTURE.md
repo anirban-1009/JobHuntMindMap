@@ -115,8 +115,8 @@ The system uses a two-tier storage approach:
 
 ## Detailed Workflow
 
-1.  **Configuration**: User edits `config.yaml` with search parameters (keywords, location) and paths to resume/LinkedIn export.
-2.  **Run**: Execute `python main.py`.
+1.  **Configuration**: User initializes with `mindmap init` and edits `config.yaml` with search parameters (keywords, location) and paths to resume/LinkedIn export.
+2.  **Run**: Execute commands via `mindmap` (e.g. `mindmap search`, `mindmap scrape`, `mindmap score`, `mindmap sync`).
 3.  **Process**:
     - Load existing vault state (to avoid overwriting manual edits).
     - Fetch new jobs matching criteria.

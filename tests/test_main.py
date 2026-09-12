@@ -11,6 +11,7 @@ from src.main import (
     analyze_gaps,
     check,
     cli,
+    init as cmd_init,
     login,
     network,
     refer,
@@ -66,6 +67,48 @@ class TestMainCLI:
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
         assert "mindmap" in result.output
+
+    def test_cli_global_config_option(self, runner: CliRunner, mock_config: str) -> None:
+        """Verify root -c / --config option is inherited by subcommands."""
+        result = runner.invoke(cli, ["-c", mock_config, "check"])
+        assert result.exit_code == 0
+        assert "Config file valid" in result.output
+
+    def test_cli_global_verbose_flag(self, runner: CliRunner, mock_config: str) -> None:
+        """Verify root -v / --verbose option sets DEBUG level logging."""
+        with patch("src.main.setup_logging") as mock_setup_logging:
+            result = runner.invoke(cli, ["-v", "-c", mock_config, "check"])
+            assert result.exit_code == 0
+            mock_setup_logging.assert_called_with(level=10)
+
+    def test_init_command_creates_workspace(self, runner: CliRunner) -> None:
+        """Verify the 'init' command creates config.yaml, data/, logs/, and .env."""
+        with runner.isolated_filesystem():
+            result = runner.invoke(cmd_init)
+            assert result.exit_code == 0
+            assert "Created 'config.yaml'" in result.output
+            assert pathlib.Path("config.yaml").exists()
+            assert pathlib.Path("data").is_dir()
+            assert pathlib.Path("logs").is_dir()
+            assert pathlib.Path(".env").exists()
+
+    def test_init_command_existing_config_without_force(self, runner: CliRunner) -> None:
+        """Verify the 'init' command warns and preserves config.yaml when --force is not passed."""
+        with runner.isolated_filesystem():
+            pathlib.Path("config.yaml").write_text("existing: true")
+            result = runner.invoke(cmd_init)
+            assert result.exit_code == 0
+            assert "already exists" in result.output
+            assert pathlib.Path("config.yaml").read_text() == "existing: true"
+
+    def test_init_command_existing_config_with_force(self, runner: CliRunner) -> None:
+        """Verify the 'init' command overwrites config.yaml when --force is passed."""
+        with runner.isolated_filesystem():
+            pathlib.Path("config.yaml").write_text("existing: true")
+            result = runner.invoke(cmd_init, ["--force"])
+            assert result.exit_code == 0
+            assert "Created 'config.yaml'" in result.output
+            assert pathlib.Path("config.yaml").read_text() != "existing: true"
 
     def test_get_version_success(self) -> None:
         """Verify _get_version returns package version when found."""
