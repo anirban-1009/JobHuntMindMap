@@ -58,20 +58,29 @@ class LLMClient(ABC):
 
             return json.loads(response_text, strict=False)
         except json.JSONDecodeError:
-            # Fallback: Try to find the first '{' and last '}'
-            start = response_text.find("{")
-            end = response_text.rfind("}")
-            if start != -1 and end != -1:
+            # Fallback: Try to find valid JSON structure (object or array)
+            candidates = []
+            start_obj = response_text.find("{")
+            end_obj = response_text.rfind("}")
+            if start_obj != -1 and end_obj != -1 and end_obj > start_obj:
+                candidates.append((start_obj, end_obj + 1))
+
+            start_arr = response_text.find("[")
+            end_arr = response_text.rfind("]")
+            if start_arr != -1 and end_arr != -1 and end_arr > start_arr:
+                candidates.append((start_arr, end_arr + 1))
+
+            # Prioritize whichever starts earlier (or whichever spans the outer structure)
+            candidates.sort(key=lambda span: (span[0], -(span[1] - span[0])))
+            for start, end in candidates:
                 try:
-                    return json.loads(response_text[start : end + 1], strict=False)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON from LLM (fallback): {e}")
-                    logger.debug(f"Raw response: {response_text}")
-                    return {}
-            else:
-                logger.error("Failed to parse JSON from LLM: No JSON object found.")
-                logger.debug(f"Raw response: {response_text}")
-                return {}
+                    return json.loads(response_text[start:end], strict=False)
+                except json.JSONDecodeError:
+                    continue
+
+            logger.error("Failed to parse JSON from LLM: No valid JSON structure found.")
+            logger.debug(f"Raw response: {response_text}")
+            return {}
         except Exception as e:
             logger.error(f"Unexpected error parsing LLM response: {e}")
             return {}

@@ -147,3 +147,35 @@ Cleans up your Obsidian vault by removing Markdown files for jobs that are no lo
 ```bash
 uv run mindmap prune
 ```
+
+---
+
+## Company Evaluation & Outreach
+
+### `evaluate-companies`
+Evaluates and clusters all companies across discovered jobs and LinkedIn connections using the composite scoring model (45% Job Fit, 35% Company Domain Fit, 20% Network Leverage).
+
+```bash
+uv run mindmap evaluate-companies
+```
+
+### `companies`
+Lists scored and clustered companies with filtering and sorting options.
+
+```bash
+uv run mindmap companies [OPTIONS]
+```
+**Options:**
+- `--cluster [warm|direct|nurture|watchlist|all]`: Filter by action tier (e.g. `warm` for referral priority).
+- `--domain <text>`: Filter by tech/domain cluster (e.g. `Generative AI`, `Enterprise`).
+- `--min-score <int>`: Minimum company score (0-100).
+- `--sort [score|jobs|network|name]`: Sort criteria (default: `score`).
+- `--limit <int>`: Maximum number of companies to display (default: 25).
+
+### `company`
+Deep-dives into a specific company's dossier: displays company score, cluster, strategic action directive, all matching open jobs with direct apply links, and verified internal contacts classified by role (Recruiter/Talent, Engineering Manager/Lead, Peer Engineer).
+
+```bash
+uv run mindmap company <COMPANY_NAME>
+```
+

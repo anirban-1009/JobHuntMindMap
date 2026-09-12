@@ -205,5 +205,141 @@ def find(config, query, semantic, limit, reindex):
     click.echo(Fore.WHITE + "-" * 50)
 
 
+@cli.command("evaluate-companies")
+@click.option("--config", default="config.yaml", help="Path to config file")
+def evaluate_companies_cmd(config):
+    """Evaluate and cluster all companies across jobs and network."""
+    app = MindMapApp(config)
+    evals = app.evaluate_companies()
+    click.echo(Fore.GREEN + f"\nSuccessfully evaluated and clustered {len(evals)} companies.")
+
+
+@cli.command()
+@click.option("--config", default="config.yaml", help="Path to config file")
+@click.option("--cluster", default=None, help="Filter by action cluster (warm, direct, nurture, watchlist, or all)")
+@click.option("--domain", default=None, help="Filter by domain cluster (e.g. GenAI, Enterprise)")
+@click.option("--min-score", default=0, type=int, help="Minimum company score (0-100)")
+@click.option("--limit", default=25, type=int, help="Maximum number of companies to display")
+@click.option(
+    "--sort", "sort_by", default="score", type=click.Choice(["score", "jobs", "network", "name"]), help="Sort criteria"
+)
+def companies(config, cluster, domain, min_score, limit, sort_by):
+    """List scored and clustered companies for targeted applications and outreach."""
+    app = MindMapApp(config)
+    company_list = app.list_companies(cluster=cluster, min_score=min_score, limit=limit, sort_by=sort_by)
+
+    if not company_list:
+        click.echo(Fore.YELLOW + "No matching companies found.")
+        return
+
+    click.echo(Fore.WHITE + "\n" + "=" * 96)
+    click.echo(
+        Fore.WHITE + f"{'SCORE':<7}{'COMPANY':<28}{'ACTION CLUSTER':<18}{'JOBS (HI)':<12}{'CONNS (KEY)':<14}{'DOMAIN'}"
+    )
+    click.echo(Fore.WHITE + "-" * 96)
+
+    for c in company_list:
+        score_val = c.get("score", 0)
+        if score_val >= 75:
+            score_color = Fore.GREEN
+        elif score_val >= 55:
+            score_color = Fore.CYAN
+        else:
+            score_color = Fore.YELLOW
+
+        cluster_name = c.get("action_cluster", "Watchlist")
+        if "Warm" in cluster_name:
+            cluster_color = Fore.GREEN
+        elif "Direct" in cluster_name:
+            cluster_color = Fore.CYAN
+        elif "Nurture" in cluster_name:
+            cluster_color = Fore.YELLOW
+        else:
+            cluster_color = Fore.WHITE
+
+        name = c.get("name", "Unknown")[:26]
+        jobs_str = f"{c.get('job_count', 0)} ({c.get('high_match_job_count', 0)})"
+        conns_str = f"{c.get('connection_count', 0)} ({c.get('key_connection_count', 0)})"
+        domain_name = c.get("domain_cluster", "General")[:22]
+
+        click.echo(
+            f"{score_color}{score_val:<7}{Fore.WHITE}{name:<28}{cluster_color}{cluster_name:<18}{Fore.WHITE}{jobs_str:<12}{Fore.CYAN}{conns_str:<14}{Fore.MAGENTA}{domain_name}"
+        )
+
+    click.echo(Fore.WHITE + "=" * 96 + "\n")
+    click.echo(
+        Fore.CYAN + "Tip: Run 'uv run mindmap company <COMPANY_NAME>' for full jobs, connections, and outreach plan."
+    )
+
+
+@cli.command()
+@click.argument("company_name")
+@click.option("--config", default="config.yaml", help="Path to config file")
+def company(company_name, config):
+    """Deep-dive into a specific company's opportunities, network, and outreach plan."""
+    app = MindMapApp(config)
+    dossier = app.get_company_details(company_name)
+    if not dossier:
+        click.echo(Fore.RED + f"Company '{company_name}' not found.")
+        return
+
+    c = dossier["company"]
+    jobs = dossier["jobs"]
+    conns = dossier["connections"]
+
+    score_val = c.get("score", 0)
+    score_color = Fore.GREEN if score_val >= 75 else Fore.CYAN if score_val >= 55 else Fore.YELLOW
+
+    click.echo(Fore.WHITE + "\n" + "=" * 80)
+    click.echo(Fore.WHITE + f"COMPANY: {Fore.GREEN}{c.get('name')}  {score_color}[Score: {score_val}/100]")
+    click.echo(
+        Fore.WHITE
+        + f"Cluster: {Fore.CYAN}{c.get('action_cluster')}  |  Domain: {Fore.MAGENTA}{c.get('domain_cluster')}  |  Tier: {Fore.YELLOW}{c.get('target_tier')}"
+    )
+    click.echo(Fore.WHITE + "-" * 80)
+
+    # Breakdown
+    eval_data = c.get("evaluation_data") or {}
+    if eval_data:
+        click.echo(Fore.WHITE + "Score Breakdown:")
+        click.echo(
+            f"  - Job Quality & Fit (45%): {Fore.CYAN}{eval_data.get('job_fit_score', 0)}/100  "
+            f"{Fore.WHITE}|  Company Domain Fit (35%): {Fore.CYAN}{eval_data.get('company_fit_score', 0)}/100  "
+            f"{Fore.WHITE}|  Network Leverage (20%): {Fore.CYAN}{eval_data.get('network_score', 0)}/100"
+        )
+
+    # Action Directive
+    recommended_action = c.get("recommended_action") or eval_data.get("recommended_action")
+    if recommended_action:
+        click.echo(Fore.WHITE + f"\nRecommended Action: {Fore.GREEN}{recommended_action}")
+
+    # Open Jobs
+    click.echo(Fore.WHITE + f"\nOpen Jobs ({len(jobs)} total):")
+    if jobs:
+        for j in jobs[:8]:
+            j_score = j.get("relevance_score")
+            j_color = Fore.GREEN if (j_score or 0) >= 80 else Fore.CYAN if (j_score or 0) >= 70 else Fore.WHITE
+            score_txt = f"[{j_score}]" if j_score is not None else "[Unscored]"
+            click.echo(f"  - {j_color}{score_txt:<11} {Fore.WHITE}{j.get('title')} ({j.get('location', 'Remote')})")
+            if j.get("link"):
+                click.echo(f"    Apply: {Fore.CYAN}{j.get('link')}")
+    else:
+        click.echo(Fore.YELLOW + "  No active jobs in cache for this company.")
+
+    # Connections
+    click.echo(Fore.WHITE + f"\nNetwork Contacts ({len(conns)} verified):")
+    if conns:
+        for p in conns:
+            role_type = p.get("role_type", "other")
+            role_tag = f"[{role_type.upper()}]" if role_type != "other" else ""
+            click.echo(
+                f"  - {Fore.GREEN}{p['name']} {Fore.YELLOW}{role_tag} {Fore.WHITE}- {p['title']} (Connected: {p.get('connected_on', 'N/A')})"
+            )
+    else:
+        click.echo(Fore.YELLOW + "  No direct connections found at this company.")
+
+    click.echo(Fore.WHITE + "=" * 80 + "\n")
+
+
 if __name__ == "__main__":
     cli()

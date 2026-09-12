@@ -52,3 +52,5 @@ logs/*
 debug*
 temp_compile_*
 temp_compile
+
+qdrant_storage/

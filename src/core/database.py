@@ -587,3 +587,180 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to delete job {job_id}: {e}")
             raise
+
+    def save_company(self, company_data: Dict[str, Any]):
+        """
+        Saves or updates a company evaluation in the database.
+
+        Args:
+            company_data: Dictionary containing company evaluation details.
+        """
+        query = """
+        INSERT INTO companies (
+            id, name, score, action_cluster, domain_cluster,
+            job_count, high_match_job_count, max_job_score, avg_job_score,
+            connection_count, key_connection_count, target_tier,
+            status, outreach_poc, outreach_date, evaluation_data, notes
+        ) VALUES (
+            ?, ?, ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?,
+            ?, ?, ?, ?, ?
+        )
+        ON CONFLICT(id) DO UPDATE SET
+            name=excluded.name,
+            score=excluded.score,
+            action_cluster=excluded.action_cluster,
+            domain_cluster=excluded.domain_cluster,
+            job_count=excluded.job_count,
+            high_match_job_count=excluded.high_match_job_count,
+            max_job_score=excluded.max_job_score,
+            avg_job_score=excluded.avg_job_score,
+            connection_count=excluded.connection_count,
+            key_connection_count=excluded.key_connection_count,
+            target_tier=excluded.target_tier,
+            status=CASE WHEN companies.status != 'new' THEN companies.status ELSE excluded.status END,
+            outreach_poc=COALESCE(companies.outreach_poc, excluded.outreach_poc),
+            outreach_date=COALESCE(companies.outreach_date, excluded.outreach_date),
+            evaluation_data=excluded.evaluation_data,
+            notes=COALESCE(companies.notes, excluded.notes),
+            updated_at=CURRENT_TIMESTAMP
+        """
+        eval_data_str = ""
+        if "evaluation_data" in company_data and company_data["evaluation_data"]:
+            if isinstance(company_data["evaluation_data"], (dict, list)):
+                eval_data_str = json.dumps(company_data["evaluation_data"])
+            else:
+                eval_data_str = str(company_data["evaluation_data"])
+
+        params = (
+            company_data.get("id"),
+            company_data.get("name"),
+            company_data.get("score", 0),
+            company_data.get("action_cluster", "Watchlist"),
+            company_data.get("domain_cluster", "General Tech"),
+            company_data.get("job_count", 0),
+            company_data.get("high_match_job_count", 0),
+            company_data.get("max_job_score", 0),
+            company_data.get("avg_job_score", 0.0),
+            company_data.get("connection_count", 0),
+            company_data.get("key_connection_count", 0),
+            company_data.get("target_tier", "Standard"),
+            company_data.get("status", "new"),
+            company_data.get("outreach_poc"),
+            company_data.get("outreach_date"),
+            eval_data_str,
+            company_data.get("notes"),
+        )
+
+        try:
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute(query, params)
+        except Exception as e:
+            logger.error(f"Failed to save company {company_data.get('name')}: {e}")
+            raise
+
+    def get_company(self, identifier: str) -> Optional[Dict[str, Any]]:
+        """Retrieves a company by ID or exact/case-insensitive name."""
+        query = "SELECT * FROM companies WHERE id = ? OR LOWER(name) = LOWER(?)"
+        try:
+            with contextlib.closing(self._get_connection()) as conn:
+                cursor = conn.execute(query, (identifier, identifier))
+                row = cursor.fetchone()
+                if row:
+                    res = dict(row)
+                    if res.get("evaluation_data"):
+                        try:
+                            res["evaluation_data"] = json.loads(res["evaluation_data"])
+                        except Exception:
+                            pass
+                    return res
+                return None
+        except Exception as e:
+            logger.error(f"Failed to get company {identifier}: {e}")
+            return None
+
+    def get_all_companies(
+        self,
+        min_score: int = 0,
+        action_cluster: Optional[str] = None,
+        domain_cluster: Optional[str] = None,
+        sort_by: str = "score",
+        limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """Retrieves evaluated companies with filtering and sorting."""
+        sort_column_map = {
+            "score": "score DESC, max_job_score DESC, connection_count DESC",
+            "jobs": "job_count DESC, high_match_job_count DESC, score DESC",
+            "network": "connection_count DESC, key_connection_count DESC, score DESC",
+            "name": "name ASC",
+        }
+        order_by = sort_column_map.get(sort_by, "score DESC")
+
+        conditions = ["score >= ?"]
+        params: List[Any] = [min_score]
+
+        if action_cluster and action_cluster.lower() != "all":
+            conditions.append("LOWER(action_cluster) LIKE ?")
+            params.append(f"%{action_cluster.lower()}%")
+
+        if domain_cluster and domain_cluster.lower() != "all":
+            conditions.append("LOWER(domain_cluster) LIKE ?")
+            params.append(f"%{domain_cluster.lower()}%")
+
+        where_clause = " WHERE " + " AND ".join(conditions)
+        query = f"SELECT * FROM companies{where_clause} ORDER BY {order_by} LIMIT ?"
+        params.append(limit)
+
+        try:
+            with contextlib.closing(self._get_connection()) as conn:
+                cursor = conn.execute(query, tuple(params))
+                results = []
+                for row in cursor.fetchall():
+                    c_dict = dict(row)
+                    if c_dict.get("evaluation_data"):
+                        try:
+                            c_dict["evaluation_data"] = json.loads(c_dict["evaluation_data"])
+                        except Exception:
+                            pass
+                    results.append(c_dict)
+                return results
+        except Exception as e:
+            logger.error(f"Failed to get companies: {e}")
+            return []
+
+    def update_company_status(
+        self, company_id: str, status: str, outreach_poc: Optional[str] = None, notes: Optional[str] = None
+    ):
+        """Updates company outreach/application status."""
+        query = """
+        UPDATE companies
+        SET status = ?,
+            outreach_poc = COALESCE(?, outreach_poc),
+            outreach_date = CASE WHEN ? IS NOT NULL THEN CURRENT_TIMESTAMP ELSE outreach_date END,
+            notes = COALESCE(?, notes),
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ? OR LOWER(name) = LOWER(?)
+        """
+        try:
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute(query, (status, outreach_poc, outreach_poc, notes, company_id, company_id))
+                logger.info(f"Updated status for company {company_id} to {status}.")
+        except Exception as e:
+            logger.error(f"Failed to update company status for {company_id}: {e}")
+            raise
+
+    def delete_company(self, company_id: str):
+        """Deletes a company evaluation from the database."""
+        try:
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute(
+                        "DELETE FROM companies WHERE id = ? OR LOWER(name) = LOWER(?)", (company_id, company_id)
+                    )
+                logger.info(f"Deleted company {company_id}.")
+        except Exception as e:
+            logger.error(f"Failed to delete company {company_id}: {e}")
+            raise
