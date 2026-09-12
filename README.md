@@ -27,31 +27,51 @@ Instead of tracking applications in endless spreadsheets, this tool generates a 
 
 ## Quick Start 🚀
 
-1.  **Set up**: [Follow the First Run Guide](docs/FIRST_RUN.md) to install dependencies and configure API keys.
-2.  **Login**: `uv run mindmap login` (logs you into LinkedIn).
-3.  **Search**: `uv run mindmap search` (finds new jobs).
-4.  **Scrape**: `uv run mindmap scrape` (fetches details).
-5.  **Score**: `uv run mindmap score --all` (ranks jobs with AI).
-6.  **Visualize**: Open your vault in Obsidian!
+1. **Install**:
+   ```bash
+   pip install -e .
+   playwright install chromium
+   ```
+   *(Or install standalone with `pipx install .`)*
+2. **Initialize**: `mindmap init` (scaffolds `config.yaml`, `data/`, and `.env`).
+3. **Configure**: [Follow the First Run Guide](docs/FIRST_RUN.md) to set your keywords, resume, and API keys.
+4. **Validate**: `mindmap check` (verifies environment, vault path, and keys).
+5. **Login**: `mindmap login` (saves your LinkedIn session).
+6. **Search & Scrape**: `mindmap search && mindmap scrape` (finds & fetches job details).
+7. **Score**: `mindmap score --all` (ranks jobs with AI).
+8. **Visualize**: `mindmap sync` then open your Obsidian vault!
 
 ## How to Run
 
-The tool is designed to be run via a CLI. After installation, you can use the following commands:
+The application is controlled via the `mindmap` command:
 
-- `uv run mindmap check`: Validate config and environment.
-- `uv run mindmap login`: Manual LinkedIn login to save session.
-- `uv run mindmap search`: Discovery phase - finds job IDs.
-- `uv run mindmap scrape`: Extraction phase - gets job descriptions.
-- `uv run mindmap score`: AI phase - calculates relevance.
-- `uv run mindmap network`: Network phase - finds connections for a job.
-- `uv run mindmap notify`: Alert phase - sends email digest.
-- `uv run mindmap sync`: Sync job data to Obsidian vault.
-- `uv run mindmap evaluate-companies`: Score and cluster all companies (job fit + domain fit + network leverage).
-- `uv run mindmap companies`: List scored companies with filters (cluster, domain, min-score, sort).
-- `uv run mindmap company <COMPANY_NAME>`: Deep-dive a company's jobs, contacts, and outreach plan.
-- `uv run mindmap tailor <JOB_ID>`: Generate a tailored resume PDF for a specific job.
+```bash
+mindmap [GLOBAL_OPTIONS] COMMAND [ARGS]...
+```
 
-For advanced usage and automation, see the [Deployment Strategy](docs/DEPLOYMENT.md).
+**Global Options:**
+- `-c, --config <path>`: Custom configuration file (default: `config.yaml` or `$MINDMAP_CONFIG`).
+- `-v, --verbose`: Enable detailed DEBUG logging.
+- `--version`: Show installed version.
+
+**Core Commands:**
+- `mindmap init`: Scaffold a new workspace with default configuration and folders.
+- `mindmap check`: Validate configuration and environment readiness.
+- `mindmap login`: Manual LinkedIn login to save session cookies.
+- `mindmap search`: Discovery phase - find new job IDs.
+- `mindmap scrape`: Extraction phase - get job descriptions.
+- `mindmap score`: AI evaluation - calculate relevance against your resume.
+- `mindmap network`: Network phase - map connections for a job or company.
+- `mindmap notify`: Alert phase - send job digest email.
+- `mindmap sync`: Sync jobs, companies, and people into Obsidian.
+- `mindmap sync-back`: Pull status edits made in Obsidian back into SQLite.
+- `mindmap evaluate-companies`: Score and cluster companies (fit + domain + network leverage).
+- `mindmap companies`: Filter and list ranked companies.
+- `mindmap company <NAME>`: Deep-dive a company's jobs, verified contacts, and outreach plan.
+- `mindmap tailor <JOB_ID>`: Generate a tailored resume PDF for a specific job.
+- `mindmap find <QUERY>`: Search the Obsidian vault (keyword or `--semantic`).
+
+For detailed documentation of every command and flag, see the [CLI Reference](docs/CLI_REFERENCE.md).
 
 ## Tech Stack
 

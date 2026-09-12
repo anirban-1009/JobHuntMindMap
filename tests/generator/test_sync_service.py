@@ -475,3 +475,32 @@ class TestSyncService:
         result = sync_service._load_analysis(mock_job_data)
         assert result.score == 0
         assert "not been scored" in result.reasoning
+
+    def test_init_without_llm_client(self, mock_config):
+        """SyncService should initialize safely when llm_client is None."""
+        with (
+            patch("src.generator.sync_service.VaultManager"),
+            patch("src.generator.sync_service.TemplateManager"),
+            patch("src.generator.sync_service.DashboardGenerator"),
+            patch("src.generator.sync_service.JobDetailsExtractor"),
+        ):
+            service = SyncService(mock_config, llm_client=None)
+            assert service.referral_service is None
+            assert service.resume_service is not None
+            assert isinstance(service.resume_data, dict)
+
+    def test_init_with_llm_client(self, mock_config):
+        """SyncService should initialize referral_service when llm_client is provided."""
+        mock_llm = MagicMock()
+        with (
+            patch("src.generator.sync_service.VaultManager"),
+            patch("src.generator.sync_service.TemplateManager"),
+            patch("src.generator.sync_service.DashboardGenerator"),
+            patch("src.generator.sync_service.JobDetailsExtractor"),
+            patch("src.generator.sync_service.ReferralService") as mock_ref_cls,
+            patch("src.generator.sync_service.ResumeService") as mock_res_cls,
+        ):
+            mock_res_cls.return_value.get_resume_data.return_value = {"name": "Test"}
+            service = SyncService(mock_config, llm_client=mock_llm)
+            assert service.referral_service == mock_ref_cls.return_value
+            assert service.resume_data == {"name": "Test"}

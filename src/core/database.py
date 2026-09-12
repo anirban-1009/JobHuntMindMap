@@ -8,6 +8,10 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# sqlite_vec is an optional dependency. Annotating it as Any before the import keeps
+# the type checker from narrowing it to None (which would flag sqlite_vec.load(...)
+# and sqlite_vec.serialize_float32(...) as invalid calls on None).
+sqlite_vec: Any
 try:
     import sqlite_vec
 except ImportError:
@@ -76,7 +80,7 @@ class DatabaseManager:
 
         # Add trigger to update updated_at
         create_trigger = """
-        CREATE TRIGGER IF NOT EXISTS update_jobs_timestamp 
+        CREATE TRIGGER IF NOT EXISTS update_jobs_timestamp
         AFTER UPDATE ON jobs
         BEGIN
             UPDATE jobs SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
@@ -112,7 +116,7 @@ class DatabaseManager:
 
                 # Add trigger for requests timestamp
                 create_requests_trigger = """
-                CREATE TRIGGER IF NOT EXISTS update_requests_timestamp 
+                CREATE TRIGGER IF NOT EXISTS update_requests_timestamp
                 AFTER UPDATE ON requests
                 BEGIN
                     UPDATE requests SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
@@ -148,7 +152,7 @@ class DatabaseManager:
 
                 # Add trigger for companies timestamp
                 create_companies_trigger = """
-                CREATE TRIGGER IF NOT EXISTS update_companies_timestamp 
+                CREATE TRIGGER IF NOT EXISTS update_companies_timestamp
                 AFTER UPDATE ON companies
                 BEGIN
                     UPDATE companies SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
@@ -239,9 +243,9 @@ class DatabaseManager:
             salary=excluded.salary,
             apply_link=excluded.apply_link,
             raw_data=excluded.raw_data,
-        status=CASE 
-            WHEN jobs.status = 'discovered' THEN excluded.status 
-            ELSE jobs.status 
+        status=CASE
+            WHEN jobs.status = 'discovered' THEN excluded.status
+            ELSE jobs.status
         END,
         relevance_score=COALESCE(excluded.relevance_score, jobs.relevance_score),
             analysis_data=COALESCE(excluded.analysis_data, jobs.analysis_data),
@@ -385,10 +389,20 @@ class DatabaseManager:
         """Updates the status of a job.
 
         Stamps `applied_at` the moment a job transitions to 'applied', and clears it if the
-        job is reverted back to 'to_apply' - so it always reflects the most recent application.
+        job is reverted back to 'to_apply' - so it always reflects the first time it was
+        marked applied, not the last sync.
         """
         if status == "applied":
-            query = "UPDATE jobs SET status = ?, applied_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
+            # Only stamp applied_at on the actual transition into 'applied'. Re-applying
+            # the same status (e.g. on every sync-back) must not overwrite the original
+            # application date.
+            query = """
+            UPDATE jobs SET
+                status = ?,
+                applied_at = CASE WHEN status = 'applied' THEN applied_at ELSE CURRENT_TIMESTAMP END,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """
         elif status == "to_apply":
             query = "UPDATE jobs SET status = ?, applied_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?"
         else:

@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 
 # Maps the DB's internal job status to the display value written into a job note's
 # frontmatter `status` property (and back, when read from Obsidian).
-STATUS_DB_TO_DISPLAY = {
+STATUS_DB_TO_DISPLAY: Dict = {
     "new": "ToApply",
     "discovered": "ToApply",
     "to_apply": "ToApply",
@@ -84,7 +84,7 @@ class SyncService:
         self.template_manager = TemplateManager()
         self.dashboard_generator = DashboardGenerator(config)
         self.extractor = JobDetailsExtractor(None, llm_client=llm_client)
-        self.referral_service = ReferralService(llm_client, config)
+        self.referral_service = ReferralService(llm_client, config) if llm_client else None
         self.resume_service = ResumeService(llm_client, config.get("user", {}).get("resume_path"))
         self.resume_data = self.resume_service.get_resume_data()
 
@@ -481,7 +481,7 @@ class SyncService:
                 job_id = str(job_id)
 
                 status_text = frontmatter.get("status")
-                found_status = STATUS_DISPLAY_TO_DB.get(status_text)
+                found_status = STATUS_DISPLAY_TO_DB.get(status_text) if status_text else None
 
                 # The "applied" checkbox is a quick toggle for the common ToApply <-> Applied
                 # transition. It only takes effect at that boundary; finer states (Interviewing,

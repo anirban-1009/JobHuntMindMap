@@ -1,5 +1,6 @@
 import json
 import pathlib
+import shutil
 import sys
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
@@ -33,11 +34,9 @@ class MindMapApp:
 
     def __init__(self, config_path: str) -> None:
         """Initialize services and load configuration."""
-        self.project_root = pathlib.Path(__file__).parents[2]
         self.config_path = pathlib.Path(config_path)
-
         self.config = self._load_config()
-        self.session_path = self.project_root / "data" / "session.json"
+        self.session_path = pathlib.Path(self.config.get("browser", {}).get("session_path", "data/session.json"))
         self.llm = get_llm_client(self.config.get("ai", {}))
         self.db = DatabaseManager()
 
@@ -74,11 +73,43 @@ class MindMapApp:
                 logger.error(f"Error parsing YAML: {error}")
                 sys.exit(1)
 
-    def check_env(self) -> None:
+    def check_env(self) -> bool:
         """Check if the environment and configuration are valid."""
         logger.info("Checking environment...")
         logger.info("Config file valid.")
+
+        # Check Obsidian Vault
+        vault_path_str = self.config.get("obsidian", {}).get("vault_path")
+        if vault_path_str:
+            vault_path = pathlib.Path(vault_path_str).expanduser()
+            if vault_path.exists():
+                logger.info(f"Obsidian vault directory found: {vault_path}")
+            else:
+                logger.warning(f"Obsidian vault directory does not exist: {vault_path}")
+        else:
+            logger.warning("Obsidian vault_path is not configured in config.yaml.")
+
+        # Check Resume PDF
+        resume_path_str = self.config.get("user", {}).get("resume_path")
+        if resume_path_str:
+            resume_path = pathlib.Path(resume_path_str).expanduser()
+            if resume_path.exists():
+                logger.info(f"Resume PDF found: {resume_path}")
+            else:
+                logger.warning(f"Resume PDF not found: {resume_path}")
+
+        # Check AI Provider
+        ai_provider = self.config.get("ai", {}).get("provider", "gemini")
+        logger.info(f"Configured AI provider: {ai_provider}")
+
+        # Check pdflatex for resume tailoring
+        if shutil.which("pdflatex"):
+            logger.info("pdflatex is installed and available.")
+        else:
+            logger.warning("pdflatex not found in PATH (required for 'mindmap tailor' PDF compilation).")
+
         logger.info("Mindmap is ready to run!")
+        return True
 
     def login(self) -> None:
         """Launch browser for manual platform authentication."""
@@ -116,6 +147,8 @@ class MindMapApp:
                     results = searcher.search(
                         kw, loc, search_cfg.get("filters", {}), search_cfg.get("location_type", "Any")
                     )
+                    if results is None:
+                        break
                     all_results.extend(results)
                     seen_searches.add(search_key)
                     if len(results) >= 15:
@@ -158,6 +191,9 @@ class MindMapApp:
                 logger.info(f"Total unique jobs found: {len(filtered)} (after filtering)")
 
             # Save search results to DB as discovery cache
+            if extractor.db is None:
+                logger.error("Database not available; cannot save search results.")
+                return
             for job in filtered:
                 # We save minimal info; status 'discovered' means JD not yet scraped
                 extractor.db.save_job(
@@ -205,8 +241,9 @@ class MindMapApp:
                     # Run full search across platforms, filtering out already-cached jobs
                     filtered = self._run_searches(browser, external_only=external_only, db=extractor.db)
 
-                # Add previously discovered jobs from DB that haven't been scraped yet
-                discovered_jobs = extractor.db.get_jobs_by_status("discovered")
+                # Add previously discovered jobs from DB that haven't been scraped yet.
+                # Skip when a specific job was requested - only that job should be scraped.
+                discovered_jobs = extractor.db.get_jobs_by_status("discovered") if not job_id and extractor.db else []
                 if discovered_jobs:
                     logger.info(f"Adding {len(discovered_jobs)} previously discovered jobs from cache.")
                     for dj in discovered_jobs:
@@ -293,8 +330,8 @@ class MindMapApp:
                 all_jobs = [
                     j
                     for j in all_jobs
-                    if "Unknown" in j.get("title")
-                    or "Unknown" in j.get("company")
+                    if "Unknown" in (j.get("title") or "")
+                    or "Unknown" in (j.get("company") or "")
                     or not j.get("title")
                     or not j.get("company")
                 ]

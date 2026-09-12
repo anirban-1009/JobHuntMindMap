@@ -81,3 +81,21 @@ class TestResumeService:
             mock_parser.extract_text.side_effect = Exception("Parser error")
             data = resume_service._parse_pdf_to_json()
             assert data == {}
+
+    def test_get_resume_data_no_llm_cache_hit(self):
+        """Test that get_resume_data works from cache even when llm_client is None."""
+        service = ResumeService(llm_client=None, resume_path="data/resume.pdf")
+        mock_data = {"first_name": "Anirban"}
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("builtins.open", mock_open(read_data=json.dumps(mock_data))):
+                data = service.get_resume_data()
+                assert data == mock_data
+
+    def test_get_resume_data_no_llm_pdf_returns_empty(self):
+        """Test that get_resume_data returns empty dict when only PDF exists but no LLM is provided."""
+        service = ResumeService(llm_client=None, resume_path="data/resume.pdf")
+        # Mock: cache does not exist (1st call), PDF exists (2nd call)
+        with patch("pathlib.Path.exists") as mock_exists:
+            mock_exists.side_effect = lambda: mock_exists.call_count == 2
+            data = service.get_resume_data()
+            assert data == {}

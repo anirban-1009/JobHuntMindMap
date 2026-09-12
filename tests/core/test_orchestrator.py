@@ -69,6 +69,27 @@ class TestMindMapApp:
             app.scrape(headless=True, limit=None, force=False, job_id="123")
             mock_extractor.extract_multiple_jobs.assert_called_once()
 
+    def test_scrape_with_id_ignores_discovered_jobs(self, app):
+        """Scraping a specific job ID must only scrape that job, not discovered jobs from the DB."""
+        with (
+            patch("src.core.orchestrator.JobDetailsExtractor") as mock_extractor_cls,
+            patch("src.core.orchestrator.BrowserManager"),
+        ):
+            mock_extractor = mock_extractor_cls.return_value
+            # DB has discovered jobs that would previously have been scraped too
+            mock_extractor.db.get_jobs_by_status.return_value = [
+                {"id": "999", "title": "Other Job", "company": "Co", "link": "https://x"}
+            ]
+
+            app.scrape(headless=True, limit=None, force=False, job_id="123")
+
+            # Only the requested job should be passed to the extractor
+            args, _ = mock_extractor.extract_multiple_jobs.call_args
+            job_ids = [j.id for j in args[0]]
+            assert job_ids == ["123"]
+            # And the discovered-jobs query should not even be consulted
+            mock_extractor.db.get_jobs_by_status.assert_not_called()
+
     def test_scrape_no_jobs(self, app):
         with (
             patch("src.core.orchestrator.JobSearcher") as mock_searcher_cls,
@@ -121,3 +142,15 @@ class TestMindMapApp:
                 res = app.tailor_resume("123")
                 assert res is not None
                 assert "Resume_" in str(res)
+
+    def test_check_env(self, app, tmp_path):
+        """Test check_env runs environment checks and returns True."""
+        vault_dir = tmp_path / "vault"
+        vault_dir.mkdir()
+        resume_file = tmp_path / "resume.pdf"
+        resume_file.touch()
+
+        app.config["obsidian"] = {"vault_path": str(vault_dir)}
+        app.config["user"]["resume_path"] = str(resume_file)
+
+        assert app.check_env() is True

@@ -1,4 +1,10 @@
+import importlib.metadata
+import logging
+import pathlib
+from typing import Optional
+
 import click
+from click.core import ParameterSource
 from colorama import Fore, init
 
 from src.core.orchestrator import MindMapApp
@@ -7,19 +13,103 @@ from src.utils.logger import setup_logging
 init(autoreset=True)
 
 
+def _get_version() -> str:
+    """Returns the installed package version, falling back to a dev placeholder."""
+    try:
+        return importlib.metadata.version("job-hunt-mindmap")
+    except importlib.metadata.PackageNotFoundError:
+        return "0.0.0-dev"
+
+
+def _get_sample_config() -> str:
+    """Reads default sample configuration from bundled package resources or local fallback."""
+    try:
+        import importlib.resources as pkg_resources
+
+        return (pkg_resources.files("src.resources") / "config.sample.yaml").read_text(encoding="utf-8")
+    except Exception:
+        fallback = pathlib.Path(__file__).parent / "resources" / "config.sample.yaml"
+        if fallback.exists():
+            return fallback.read_text(encoding="utf-8")
+        local_sample = pathlib.Path("config.sample.yaml")
+        if local_sample.exists():
+            return local_sample.read_text(encoding="utf-8")
+        raise FileNotFoundError("Could not find bundled config.sample.yaml")
+
+
+def _resolve_config(config: Optional[str]) -> str:
+    """Resolves configuration path considering global -c/--config option."""
+    ctx = click.get_current_context(silent=True)
+    if ctx and ctx.get_parameter_source("config") == ParameterSource.DEFAULT:
+        if ctx.obj and ctx.obj.get("config"):
+            return ctx.obj["config"]
+    return config or "config.yaml"
+
+
 @click.group()
-def cli():
-    """Job Hunt Mindmap CLI"""
+@click.version_option(version=_get_version(), prog_name="mindmap")
+@click.option(
+    "-c",
+    "--config",
+    "global_config",
+    default=None,
+    envvar="MINDMAP_CONFIG",
+    help="Path to configuration file (default: config.yaml or MINDMAP_CONFIG).",
+)
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    default=False,
+    help="Enable verbose / debug logging output.",
+)
+def cli(global_config: Optional[str] = None, verbose: bool = False):
+    """Job Hunt Mindmap CLI - Track, analyze, and map job applications in Obsidian."""
     from dotenv import load_dotenv
 
     load_dotenv()
-    setup_logging()
+    log_level = logging.DEBUG if verbose else logging.INFO
+    setup_logging(level=log_level)
+
+    ctx = click.get_current_context()
+    ctx.ensure_object(dict)
+    ctx.obj["config"] = global_config
+
+
+@cli.command()
+@click.option("--force", is_flag=True, default=False, help="Overwrite existing config.yaml if it exists.")
+def init(force: bool):
+    """Initialize a new Job Hunt Mindmap workspace in current directory."""
+    config_file = pathlib.Path("config.yaml")
+    if config_file.exists() and not force:
+        click.echo(Fore.YELLOW + "Warning: 'config.yaml' already exists. Use --force to overwrite.")
+    else:
+        sample_content = _get_sample_config()
+        config_file.write_text(sample_content, encoding="utf-8")
+        click.echo(Fore.GREEN + "Created 'config.yaml' from template.")
+
+    pathlib.Path("data").mkdir(parents=True, exist_ok=True)
+    pathlib.Path("logs").mkdir(parents=True, exist_ok=True)
+    click.echo(Fore.GREEN + "Created 'data/' and 'logs/' directories.")
+
+    env_file = pathlib.Path(".env")
+    if not env_file.exists():
+        env_file.write_text("# Job Hunt Mindmap Environment Variables\nGEMINI_API_KEY=\n", encoding="utf-8")
+        click.echo(Fore.GREEN + "Created '.env' template file.")
+
+    click.echo(Fore.CYAN + "\n" + "=" * 60)
+    click.echo(Fore.CYAN + " Workspace initialized successfully! Next steps:")
+    click.echo(Fore.WHITE + " 1. Edit 'config.yaml' with your roles, Obsidian vault path, and resume.")
+    click.echo(Fore.WHITE + " 2. Add your GEMINI_API_KEY to '.env' (if using Gemini).")
+    click.echo(Fore.WHITE + " 3. Run 'mindmap check' to validate your configuration.")
+    click.echo(Fore.CYAN + "=" * 60 + "\n")
 
 
 @cli.command()
 @click.option("--config", default="config.yaml", help="Path to config file")
 def check(config):
     """Validate configuration and environment."""
+    config = _resolve_config(config)
     MindMapApp(config).check_env()
 
 
@@ -27,6 +117,7 @@ def check(config):
 @click.option("--config", default="config.yaml", help="Path to config file")
 def login(config):
     """Obtain LinkedIn session cookies manually."""
+    config = _resolve_config(config)
     MindMapApp(config).login()
 
 
@@ -36,6 +127,7 @@ def login(config):
 @click.option("--external-only", is_flag=True, default=False, help="Only run on external sites")
 def search(config, headless, external_only):
     """Search for jobs based on configuration."""
+    config = _resolve_config(config)
     MindMapApp(config).search(headless, external_only=external_only)
 
 
@@ -50,6 +142,7 @@ def search(config, headless, external_only):
 @click.argument("job_id", required=False)
 def scrape(config, headless, limit, force, min_fast_score, score, external_only, job_id):
     """Scrape details for found jobs (or a specific job ID)."""
+    config = _resolve_config(config)
     MindMapApp(config).scrape(headless, limit, force, min_fast_score, score, external_only, job_id)
 
 
@@ -63,6 +156,7 @@ def scrape(config, headless, limit, force, min_fast_score, score, external_only,
 )
 def refresh(config, headless, limit, score, unknown_only):
     """Re-scrape details for existing jobs in database."""
+    config = _resolve_config(config)
     MindMapApp(config).refresh_existing_jobs(headless, limit, score, unknown_only)
 
 
@@ -72,6 +166,7 @@ def refresh(config, headless, limit, score, unknown_only):
 @click.argument("job_id", required=False)
 def score(config, score_all, job_id):
     """Score jobs against resume."""
+    config = _resolve_config(config)
     MindMapApp(config).score_jobs(score_all, job_id)
 
 
@@ -81,6 +176,7 @@ def score(config, score_all, job_id):
 @click.option("--tag", default=None, help="Specific tag/specialization to analyze (e.g. AI_ML)")
 def analyze_gaps(config, min_score, tag):
     """Analyze skill gaps and generate report."""
+    config = _resolve_config(config)
     MindMapApp(config).analyze_gaps(min_score, tag)
 
 
@@ -89,6 +185,7 @@ def analyze_gaps(config, min_score, tag):
 @click.option("--min-score", default=70)
 def notify(config, min_score):
     """Send job digest email."""
+    config = _resolve_config(config)
     MindMapApp(config).notify(min_score)
 
 
@@ -99,6 +196,7 @@ def notify(config, min_score):
 @click.option("--max-chars", default=200, type=int, help="Maximum characters for the message")
 def refer(config, job_id, name, max_chars):
     """Generate referral request for a job."""
+    config = _resolve_config(config)
     app = MindMapApp(config)
     res = app.referral(job_id, name, max_chars=max_chars)
 
@@ -119,6 +217,7 @@ def refer(config, job_id, name, max_chars):
 @click.argument("job_id")
 def tailor(config, job_id):
     """Generate a tailored resume."""
+    config = _resolve_config(config)
     app = MindMapApp(config)
     path = app.tailor_resume(job_id)
     if path:
@@ -130,6 +229,7 @@ def tailor(config, job_id):
 @click.option("--prompt", default="Say 'Mindmap AI Online'", help="Test prompt")
 def test_ai(config, prompt):
     """Test AI provider connection."""
+    config = _resolve_config(config)
     MindMapApp(config).test_ai(prompt)
 
 
@@ -138,6 +238,7 @@ def test_ai(config, prompt):
 @click.option("--config", default="config.yaml", help="Path to config file")
 def network(job_id, config):
     """Find connections for a job."""
+    config = _resolve_config(config)
     MindMapApp(config).find_network(job_id)
 
 
@@ -145,6 +246,7 @@ def network(job_id, config):
 @click.option("--config", default="config.yaml", help="Path to config file")
 def network_all(config):
     """Find connections for all jobs."""
+    config = _resolve_config(config)
     MindMapApp(config).map_all_networks()
 
 
@@ -152,6 +254,7 @@ def network_all(config):
 @click.option("--config", default="config.yaml")
 def sync(config):
     """Sync data to Obsidian."""
+    config = _resolve_config(config)
     MindMapApp(config).sync()
 
 
@@ -159,6 +262,7 @@ def sync(config):
 @click.option("--config", default="config.yaml")
 def sync_back(config):
     """Sync changes from Obsidian back to the database."""
+    config = _resolve_config(config)
     MindMapApp(config).sync_back()
 
 
@@ -166,6 +270,7 @@ def sync_back(config):
 @click.option("--config", default="config.yaml")
 def prune(config):
     """Delete Obsidian pages not present in the database."""
+    config = _resolve_config(config)
     MindMapApp(config).prune()
 
 
@@ -177,6 +282,7 @@ def prune(config):
 @click.option("--reindex", is_flag=True, default=False, help="Reindex changed vault files before searching")
 def find(config, query, semantic, limit, reindex):
     """Search the Obsidian vault (keyword by default, --semantic for embeddings)."""
+    config = _resolve_config(config)
     results = MindMapApp(config).find(query, semantic=semantic, limit=limit, reindex=reindex)
 
     if not results:
@@ -198,6 +304,7 @@ def find(config, query, semantic, limit, reindex):
 @click.option("--config", default="config.yaml", help="Path to config file")
 def evaluate_companies_cmd(config):
     """Evaluate and cluster all companies across jobs and network."""
+    config = _resolve_config(config)
     app = MindMapApp(config)
     evals = app.evaluate_companies()
     click.echo(Fore.GREEN + f"\nSuccessfully evaluated and clustered {len(evals)} companies.")
@@ -214,6 +321,7 @@ def evaluate_companies_cmd(config):
 )
 def companies(config, cluster, domain, min_score, limit, sort_by):
     """List scored and clustered companies for targeted applications and outreach."""
+    config = _resolve_config(config)
     app = MindMapApp(config)
     company_list = app.list_companies(cluster=cluster, min_score=min_score, limit=limit, sort_by=sort_by)
 
@@ -266,6 +374,7 @@ def companies(config, cluster, domain, min_score, limit, sort_by):
 @click.option("--config", default="config.yaml", help="Path to config file")
 def company(company_name, config):
     """Deep-dive into a specific company's opportunities, network, and outreach plan."""
+    config = _resolve_config(config)
     app = MindMapApp(config)
     dossier = app.get_company_details(company_name)
     if not dossier:

@@ -43,7 +43,7 @@ class JobSearcher:
         self.browser = browser_manager
 
     def construct_search_url(
-        self, keywords: str, location: str, filters: Dict[str, List[str]] = None, location_type: str = "Any"
+        self, keywords: str, location: str, filters: Optional[Dict[str, List[str]]] = None, location_type: str = "Any"
     ) -> str:
         """
         Constructs a LinkedIn search URL based on criteria.
@@ -86,8 +86,8 @@ class JobSearcher:
         return f"{LINKEDIN_JOBS_SEARCH_URL}?{query_string}"
 
     def search(
-        self, keywords: str, location: str, filters: Dict[str, List[str]] = None, location_type: str = "Any"
-    ) -> List[JobSearchResult]:
+        self, keywords: str, location: str, filters: Optional[Dict[str, List[str]]] = None, location_type: str = "Any"
+    ) -> List[JobSearchResult] | None:
         """
         Performs the job search and scrapes results.
 
@@ -101,13 +101,16 @@ class JobSearcher:
             A list of JobSearchResult objects.
         """
         url = self.construct_search_url(keywords, location, filters, location_type)
-        logger.info(f"Searching for jobs: {url}")
+        logger.info(f"Searching for jobs: {url}") if url is not None else None
 
         # Add random delay before navigating to the search URL to mimic human behavior
         time.sleep(random.uniform(2.0, 5.0))
 
         self.browser.goto(url)
         page = self.browser.page
+
+        if page is None:
+            return None
 
         # LinkedIn might show a login wall if cookies are not set or expired.
         # BrowserManager should handle state, but we should check if we are on the right page.

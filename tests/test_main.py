@@ -7,16 +7,18 @@ from click.testing import CliRunner
 
 from src.core.relevance_scorer import ScoringResult
 from src.main import (
+    _get_version,
     analyze_gaps,
     check,
     cli,
+    init as cmd_init,
     login,
     network,
     refer,
     score,
     scrape,
     search,
-    test_ai,
+    test_ai as cmd_test_ai,
 )
 
 
@@ -59,6 +61,66 @@ class TestMainCLI:
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         assert "Job Hunt Mindmap CLI" in result.output
+
+    def test_cli_version(self, runner: CliRunner) -> None:
+        """Verify that the CLI --version option returns version info."""
+        result = runner.invoke(cli, ["--version"])
+        assert result.exit_code == 0
+        assert "mindmap" in result.output
+
+    def test_cli_global_config_option(self, runner: CliRunner, mock_config: str) -> None:
+        """Verify root -c / --config option is inherited by subcommands."""
+        result = runner.invoke(cli, ["-c", mock_config, "check"])
+        assert result.exit_code == 0
+        assert "Config file valid" in result.output
+
+    def test_cli_global_verbose_flag(self, runner: CliRunner, mock_config: str) -> None:
+        """Verify root -v / --verbose option sets DEBUG level logging."""
+        with patch("src.main.setup_logging") as mock_setup_logging:
+            result = runner.invoke(cli, ["-v", "-c", mock_config, "check"])
+            assert result.exit_code == 0
+            mock_setup_logging.assert_called_with(level=10)
+
+    def test_init_command_creates_workspace(self, runner: CliRunner) -> None:
+        """Verify the 'init' command creates config.yaml, data/, logs/, and .env."""
+        with runner.isolated_filesystem():
+            result = runner.invoke(cmd_init)
+            assert result.exit_code == 0
+            assert "Created 'config.yaml'" in result.output
+            assert pathlib.Path("config.yaml").exists()
+            assert pathlib.Path("data").is_dir()
+            assert pathlib.Path("logs").is_dir()
+            assert pathlib.Path(".env").exists()
+
+    def test_init_command_existing_config_without_force(self, runner: CliRunner) -> None:
+        """Verify the 'init' command warns and preserves config.yaml when --force is not passed."""
+        with runner.isolated_filesystem():
+            pathlib.Path("config.yaml").write_text("existing: true")
+            result = runner.invoke(cmd_init)
+            assert result.exit_code == 0
+            assert "already exists" in result.output
+            assert pathlib.Path("config.yaml").read_text() == "existing: true"
+
+    def test_init_command_existing_config_with_force(self, runner: CliRunner) -> None:
+        """Verify the 'init' command overwrites config.yaml when --force is passed."""
+        with runner.isolated_filesystem():
+            pathlib.Path("config.yaml").write_text("existing: true")
+            result = runner.invoke(cmd_init, ["--force"])
+            assert result.exit_code == 0
+            assert "Created 'config.yaml'" in result.output
+            assert pathlib.Path("config.yaml").read_text() != "existing: true"
+
+    def test_get_version_success(self) -> None:
+        """Verify _get_version returns package version when found."""
+        with patch("importlib.metadata.version", return_value="1.2.3"):
+            assert _get_version() == "1.2.3"
+
+    def test_get_version_not_found(self) -> None:
+        """Verify _get_version returns fallback when PackageNotFoundError occurs."""
+        import importlib.metadata
+
+        with patch("importlib.metadata.version", side_effect=importlib.metadata.PackageNotFoundError):
+            assert _get_version() == "0.0.0-dev"
 
     def test_check_valid_config(self, runner: CliRunner, mock_config: str) -> None:
         """Verify the 'check' command validates a correct configuration file."""
@@ -162,7 +224,7 @@ class TestMainCLI:
         mock_client = mock_get_llm.return_value
         mock_client.generate.return_value = "Hello form AI"
 
-        result = runner.invoke(test_ai, ["--config", mock_config])
+        result = runner.invoke(cmd_test_ai, ["--config", mock_config])
 
         assert result.exit_code == 0
         assert "AI Response" in result.output

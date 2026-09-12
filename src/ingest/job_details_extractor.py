@@ -112,7 +112,7 @@ class JobDetailsExtractor:
 
     def __init__(
         self,
-        browser_manager: Optional[BrowserManager],
+        browser_manager: Optional[BrowserManager] = None,
         llm_client: Optional[LLMClient] = None,
     ):
         """
@@ -126,11 +126,11 @@ class JobDetailsExtractor:
         self.llm = llm_client
 
         # Initialize Database Manager
+        self.db: Optional[DatabaseManager] = None
         try:
             self.db = DatabaseManager()
         except Exception as e:
             logger.warning(f"Failed to initialize database: {e}")
-            self.db = None
 
     def get_cached_job(self, job_id: str) -> Optional[JobDetails]:
         """Loads job details from database."""
@@ -196,21 +196,28 @@ class JobDetailsExtractor:
             company_name_fallback = getattr(fallback_data, "company", None)
             if company_name_fallback is None and isinstance(fallback_data, dict):
                 company_name_fallback = fallback_data.get("company", "Unknown Company")
+        # getattr/.get can still yield None (e.g. a company key with a null value);
+        # JobDetails requires a str, so coerce to the fallback sentinel.
+        if company_name_fallback is None:
+            company_name_fallback = "Unknown Company"
 
         logger.info(f"Extracting details for job {job_id}: {job_url}")
         try:
-            self.browser.goto(job_url)
+            self.browser.goto(job_url) if self.browser else None
             # Give it a moment to settle even after goto returns, with random delay
             time.sleep(random.uniform(2.0, 5.0))
         except Exception as e:
             logger.error(f"Failed to navigate to {job_url}: {e}")
             return None
 
-        page = self.browser.page
+        page = self.browser.page if self.browser else None
+
+        if page is None:
+            return None
 
         try:
             # Short-circuit for external sites
-            if job_id.startswith("ext-"):
+            if job_id.startswith("ext-") and page:
                 time.sleep(2.0)
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 time.sleep(2.0)
@@ -381,7 +388,7 @@ class JobDetailsExtractor:
         logger.info(f"Using LLM fallback extraction for job {job.id}...")
 
         prompt = f"""
-        Extract job details from the following web page text. 
+        Extract job details from the following web page text.
         Focus on the Title, Company, Location, Description, Salary, and Seniority.
 
         Page Text:
@@ -398,7 +405,7 @@ class JobDetailsExtractor:
         """
 
         try:
-            extracted = self.llm.generate_json(prompt)
+            extracted = self.llm.generate_json(prompt) if self.llm else None
             if extracted:
                 job.title = extracted.get("title") or job.title
                 job.company = extracted.get("company") or job.company

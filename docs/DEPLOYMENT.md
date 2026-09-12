@@ -30,10 +30,10 @@ The recommended way to run the tool to ensure all dependencies (Browsers, LaTeX,
     - `/config`: Maps to your local config (resume, settings).
 - **Networking**: Uses host networking or a residential proxy to avoid bot detection.
 
-### 2. Local Python Environment (Development)
-Useful for development or debugging.
-- **Setup**: `pip install .`
-- **Execution**: `mindmap run`
+### 2. Local Python Environment (Development or CLI)
+Useful for day-to-day usage, development, or debugging.
+- **Setup**: `pip install -e .` (or `pipx install .` for isolated global CLI access)
+- **Execution**: `mindmap [COMMAND]` (e.g. `mindmap sync`, `mindmap scrape`, etc.)
 
 ## Daily Scheduler (Mac/Linux)
 To automate the daily email digest and vault update:
