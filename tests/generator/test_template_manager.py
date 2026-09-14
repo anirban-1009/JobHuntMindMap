@@ -121,8 +121,53 @@ def test_render_company():
     assert 'name: "Tech Corp"' in output
     assert 'industry: "Software"' in output
     assert "# Tech Corp" in output
-    assert "[[Job_123|DevOps]] (#ToApply)" in output
+    assert "| [[Job_123]] | #ToApply |" in output
     assert "[[Person_Alice|Alice]] - CTO" in output
+
+
+def test_render_company_multiple_opportunities_formatting():
+    manager = TemplateManager()
+    output = manager.render_company(
+        name="Tech Corp",
+        industry="Software",
+        location="San Francisco",
+        website="http://techcorp.com",
+        jobs=[
+            {
+                "title": "Staff Engineer",
+                "filename": "Job_1",
+                "status": "discovered",
+                "score": 88,
+                "location": "Remote",
+                "link": "https://example.com/apply/1",
+            },
+            {
+                "title": "Lead Architect",
+                "filename": "Job_2",
+                "status": "to_apply",
+                "score": 92,
+                "location": "New York, NY",
+                "link": "https://example.com/apply/2",
+            },
+        ],
+        people=[
+            {"name": "Alice", "filename": "Person_Alice", "title": "VP Eng", "role_type": "decision_maker"},
+            {"name": "Bob", "filename": "Person_Bob", "title": "Senior Recruiter", "role_type": "recruiter"},
+        ],
+    )
+
+    assert "| Role / Opportunity | Status | Score | Location | Link |" in output
+    assert "| :--- | :--- | :---: | :--- | :--- |" in output
+
+    expected_job1 = "| [[Job_1]] | discovered | 88 | Remote | [Apply Link](https://example.com/apply/1) |"
+    expected_job2 = "| [[Job_2]] | to_apply | 92 | New York, NY | [Apply Link](https://example.com/apply/2) |"
+    expected_person1 = "- [[Person_Alice|Alice]] - VP Eng `[DECISION_MAKER]`"
+    expected_person2 = "- [[Person_Bob|Bob]] - Senior Recruiter `[RECRUITER]`"
+
+    assert f"{expected_job1}\n{expected_job2}" in output
+    assert f"{expected_person1}\n{expected_person2}" in output
+    assert f"{expected_job2}\n\n## Network & Referral Contacts" in output
+    assert f"{expected_person2}\n\n## Notes" in output
 
 
 def test_render_person():
