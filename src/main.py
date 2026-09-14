@@ -319,10 +319,24 @@ def evaluate_companies_cmd(config):
 @click.option(
     "--sort", "sort_by", default="score", type=click.Choice(["score", "jobs", "network", "name"]), help="Sort criteria"
 )
-def companies(config, cluster, domain, min_score, limit, sort_by):
+@click.option(
+    "--sync",
+    "sync_to_obsidian",
+    is_flag=True,
+    default=False,
+    help="Synchronize company notes and update Dashboard.base in Obsidian.",
+)
+def companies(config, cluster, domain, min_score, limit, sort_by, sync_to_obsidian):
     """List scored and clustered companies for targeted applications and outreach."""
     config = _resolve_config(config)
     app = MindMapApp(config)
+
+    if sync_to_obsidian:
+        from src.generator.sync_service import SyncService
+
+        SyncService(app.config, llm_client=app.llm).sync_companies_and_base()
+        click.echo(Fore.GREEN + "Synchronized company notes and Dashboard.base to Obsidian.\n")
+
     company_list = app.list_companies(cluster=cluster, min_score=min_score, limit=limit, sort_by=sort_by)
 
     if not company_list:
@@ -370,10 +384,64 @@ def companies(config, cluster, domain, min_score, limit, sort_by):
 
 
 @cli.command()
-@click.argument("company_name")
-@click.option("--config", default="config.yaml", help="Path to config file")
-def company(company_name, config):
-    """Deep-dive into a specific company's opportunities, network, and outreach plan."""
+@click.argument("company_name", metavar="COMPANY_NAME")
+@click.option(
+    "--limit-jobs",
+    default=8,
+    type=int,
+    show_default=True,
+    help="Maximum number of open jobs to display in dossier.",
+)
+@click.option(
+    "--min-score",
+    default=0,
+    type=int,
+    show_default=True,
+    help="Filter displayed open jobs by minimum relevance score (0-100).",
+)
+@click.option("--config", default="config.yaml", show_default=True, help="Path to config file.")
+def company(company_name, limit_jobs, min_score, config):
+    """Deep-dive into a specific company's opportunities, network, and outreach plan.
+
+    \b
+    Pulls the target company's dossier from the local database, displaying composite fit
+    scores, strategic action recommendations, open job listings, and verified 1st-degree
+    network connections categorized by seniority and role type.
+
+    \b
+    Arguments:
+      COMPANY_NAME  Target company name or substring (case-insensitive, e.g. "Google",
+                    "Rearc", "OpenAI"). If not yet scored, company evaluation runs
+                    automatically.
+
+    \b
+    Dossier Highlights:
+      - Strategic Score & Tier : Composite score (0-100) and target classification tier.
+      - Action Cluster         : Warm Outreach, Direct Apply, Nurture Network, or Watchlist.
+      - Score Breakdown        : Weighted calculation across Job Fit (45%), Company Domain
+                                 Fit (35%), and Network Leverage (20%).
+      - Recommended Action     : Actionable strategic directive (e.g. outreach timing or
+                                 referral request before applying).
+      - Open Jobs              : Cached matching job listings with AI relevance scores and
+                                 direct application links.
+      - Network Contacts       : 1st-degree connections prioritized by role: [TALENT],
+                                 [ENGINEERING_LEAD], [PEER_ENGINEER], or [OTHER].
+
+    \b
+    Examples:
+      $ mindmap company Google
+      $ mindmap company "Rearc"
+      $ mindmap company "Amazon Web Services"
+      $ mindmap company Stripe --limit-jobs 15
+      $ mindmap company OpenAI --min-score 75
+      $ mindmap company Anthropic --config custom_config.yaml
+
+    \b
+    Related Commands:
+      - mindmap evaluate-companies : Compute composite scores and clusters for all companies.
+      - mindmap companies          : Filter and rank companies by cluster, score, or domain.
+      - mindmap refer <JOB_ID>     : Generate a tailored outreach message for a connection.
+    """
     config = _resolve_config(config)
     app = MindMapApp(config)
     dossier = app.get_company_details(company_name)
@@ -412,15 +480,23 @@ def company(company_name, config):
         click.echo(Fore.WHITE + f"\nRecommended Action: {Fore.GREEN}{recommended_action}")
 
     # Open Jobs
-    click.echo(Fore.WHITE + f"\nOpen Jobs ({len(jobs)} total):")
-    if jobs:
-        for j in jobs[:8]:
+    filtered_jobs = [j for j in jobs if (j.get("relevance_score") or 0) >= min_score] if min_score > 0 else jobs
+    filter_note = f", showing score >= {min_score}" if min_score > 0 else ""
+    click.echo(Fore.WHITE + f"\nOpen Jobs ({len(jobs)} total{filter_note}):")
+    if filtered_jobs:
+        display_jobs = filtered_jobs[:limit_jobs] if limit_jobs > 0 else filtered_jobs
+        for j in display_jobs:
             j_score = j.get("relevance_score")
             j_color = Fore.GREEN if (j_score or 0) >= 80 else Fore.CYAN if (j_score or 0) >= 70 else Fore.WHITE
             score_txt = f"[{j_score}]" if j_score is not None else "[Unscored]"
             click.echo(f"  - {j_color}{score_txt:<11} {Fore.WHITE}{j.get('title')} ({j.get('location', 'Remote')})")
             if j.get("link"):
                 click.echo(f"    Apply: {Fore.CYAN}{j.get('link')}")
+        if len(filtered_jobs) > len(display_jobs):
+            click.echo(
+                Fore.CYAN
+                + f"  ... and {len(filtered_jobs) - len(display_jobs)} more jobs. Use --limit-jobs to view more."
+            )
     else:
         click.echo(Fore.YELLOW + "  No active jobs in cache for this company.")
 
