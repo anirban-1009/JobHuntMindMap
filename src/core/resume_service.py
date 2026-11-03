@@ -27,12 +27,6 @@ class ResumeService:
     def get_resume_data(self, force_refresh: bool = False) -> Dict[str, Any]:
         """
         Retrieves structured resume data, parsing PDF if necessary.
-
-        Args:
-            force_refresh: Whether to ignore cached JSON and re-parse PDF.
-
-        Returns:
-            Dict[str, Any]: Structured resume data.
         """
         # 1. Try cached JSON first
         if not force_refresh and self.cache_path.exists():
@@ -51,6 +45,21 @@ class ResumeService:
 
         logger.error("No resume data found and no PDF path provided/exists.")
         return {}
+
+    def get_resume_text(self) -> str:
+        """
+        Extracts and returns the raw text from the resume PDF.
+        """
+        if not self.resume_path or not self.resume_path.exists():
+            logger.error("Resume PDF path not provided or file does not exist.")
+            return ""
+
+        try:
+            parser = PDFResumeParser()
+            return parser.extract_text(self.resume_path)
+        except Exception as e:
+            logger.error(f"Failed to extract raw text from resume: {e}")
+            return ""
 
     def _parse_pdf_to_json(self) -> Dict[str, Any]:
         """Parses PDF and uses LLM to structure the content."""

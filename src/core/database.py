@@ -304,6 +304,10 @@ class DatabaseManager:
             logger.error(f"Failed to get job {job_id}: {e}")
             return None
 
+    def get_cached_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Alias for get_job to maintain compatibility with extractor services."""
+        return self.get_job(job_id)
+
     def get_all_jobs(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         """Retrieves all jobs with pagination."""
         query = "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?"

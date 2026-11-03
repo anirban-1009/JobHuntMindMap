@@ -219,7 +219,18 @@ Analyze the suitability of this candidate for the following job.
 5. **Required Experience (Years)**: The minimum years of experience categorically strictly required by the job (integer). Return 0 if not explicitly mentioned.
 
 ### Output Format:
-Provide the result ONLY as a raw JSON object with these keys:
+Provide the result ONLY as a raw JSON object. Do not include any conversational text, markdown markers, or explanations outside the JSON.
+
+Example Format:
+{
+  "score": 85,
+  "matching_skills": ["Python", "PyTorch", "LLMs"],
+  "missing_skills": ["Kubernetes", "Terraform"],
+  "reasoning": "Candidate has strong ML fundamentals and direct experience with LLMs, but lacks the specific DevOps tooling required for the platform side of the role.",
+  "required_experience_years": 3
+}
+
+Required Keys:
 - "score": integer
 - "matching_skills": list of strings
 - "missing_skills": list of strings

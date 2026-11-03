@@ -16,6 +16,7 @@ from src.core.network_graph import NetworkGraphBuilder
 from src.core.referral_service import ReferralService
 from src.core.relevance_scorer import FastScorer
 from src.core.resume_service import ResumeService
+from src.core.search_expansion import SearchExpansionService
 from src.generator.resume_tailorer import ResumeTailorer
 from src.generator.sync_service import SyncService
 from src.generator.vault_indexer import VaultIndexer
@@ -59,6 +60,7 @@ class MindMapApp:
             user_experience_years=user_experience_years,
             experience_tolerance_years=experience_tolerance_years,
         )
+        self.search_expansion = SearchExpansionService(self.llm)
         self.user_experience_years = user_experience_years
 
     def _load_config(self) -> Dict[str, Any]:
@@ -131,6 +133,35 @@ class MindMapApp:
     def _run_searches(self, browser: Any, external_only: bool = False, db: Optional[Any] = None) -> List[Any]:
         """Execute searches across configured platforms and external sites."""
         search_cfg = self.config.get("search", {})
+
+        # Dynamic Expansion: Evolve keywords based on resume and history
+        keywords = search_cfg.get("keywords", [])
+        if not external_only:
+            resume_text = self.resume_service.get_resume_text()
+            # Get high scoring jobs from DB to inform expansion
+            top_jobs = []
+            if db:
+                # Get jobs with score >= 80
+                all_analyses = db.get_all_analyses(min_score=80)
+                for row in all_analyses:
+                    job = db.get_cached_job(row["id"])
+                    if job:
+                        # job is a dict from DatabaseManager.get_job
+                        top_jobs.append(
+                            {
+                                "title": job.get("title"),
+                                "company": job.get("company"),
+                                "reasoning": row.get("analysis_data", ""),
+                            }
+                        )
+
+            expanded = self.search_expansion.generate_expanded_queries(
+                resume_text=resume_text, current_keywords=keywords, top_jobs=top_jobs
+            )
+            if expanded:
+                logger.info(f"Adding {len(expanded)} dynamically expanded keywords to this search session.")
+                keywords = keywords + expanded
+
         all_results = []
 
         searcher = JobSearcher(browser)
@@ -138,7 +169,7 @@ class MindMapApp:
 
         # 1. LinkedIn Search
         if not external_only:
-            for kw in search_cfg.get("keywords", []):
+            for kw in keywords:
                 for loc in self._get_locations():
                     search_key = f"{kw}|{loc}"
                     if search_key in seen_searches:
