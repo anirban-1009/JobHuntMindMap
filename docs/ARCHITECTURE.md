@@ -18,6 +18,7 @@ graph TD
     %% Ingestion Layer
     subgraph Ingestion [Ingestion Layer]
         Search[Job Searcher]
+        Expander[Search Expansion]
         Scrape[Detail Extractor]
         Network[Network Builder]
     end
@@ -73,6 +74,7 @@ graph TD
 Responsible for fetching data from external sources.
 
 - **Job Seeker Profile**: Parses user's resume (PDF/Text) or LinkedIn profile to extract skills and experience.
+- **Search Expansion** (`src/core/search_expansion.py`): Evolved search strategy that uses the LLM to generate new keywords based on the resume and previous high-scoring job matches to prevent repetitive search loops.
 - **Job Listings**: Fetches relevant job postings using browser automation.
   - _Strategy_: Use `playwright` or `selenium` to automate search and extraction from the user's LinkedIn feed (as a logged-in user).
 - **Network Connections**: Imports user's connections without API costs.

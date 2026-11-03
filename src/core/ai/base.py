@@ -56,6 +56,11 @@ class LLMClient(ABC):
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0].strip()
 
+            # Strip leading/trailing whitespace and non-JSON characters
+            response_text = response_text.strip()
+            if response_text.startswith("json"):  # Handle cases where LLM writes 'json { ... }'
+                response_text = response_text[4:].strip()
+
             return json.loads(response_text, strict=False)
         except json.JSONDecodeError:
             # Fallback: Try to find valid JSON structure (object or array)
