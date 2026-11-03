@@ -202,7 +202,7 @@ mindmap prune
 ## Company Evaluation & Outreach
 
 ### `evaluate-companies`
-Evaluates and clusters all companies across discovered jobs and LinkedIn connections using the composite scoring model (45% Job Fit, 35% Company Domain Fit, 20% Network Leverage).
+Evaluates and clusters all companies across discovered jobs and LinkedIn connections using the composite scoring model (45% Job Fit, 35% Company Domain Fit, 20% Network Leverage). Automatically updates company notes in Obsidian's `Companies/` folder and synchronizes `Dashboard.base` with sorted company views and action cluster tabs.
 
 ```bash
 mindmap evaluate-companies
@@ -220,12 +220,34 @@ mindmap companies [OPTIONS]
 - `--min-score <int>`: Minimum company score (0-100).
 - `--sort [score|jobs|network|name]`: Sort criteria (default: `score`).
 - `--limit <int>`: Maximum number of companies to display (default: 25).
+- `--sync`: Synchronize evaluated company notes and `Dashboard.base` directly to Obsidian.
 
 ### `company`
 Deep-dives into a specific company's dossier: displays company score, cluster, strategic action directive, all matching open jobs with direct apply links, and verified internal contacts classified by role (Recruiter/Talent, Engineering Manager/Lead, Peer Engineer).
 
 ```bash
-mindmap company <COMPANY_NAME>
+mindmap company <COMPANY_NAME> [OPTIONS]
 ```
+
+**Arguments:**
+- `<COMPANY_NAME>`: Target company name or substring (e.g. `Google`, `Rearc`, `"Amazon Web Services"`). Automatically runs evaluation if not yet scored.
+
+**Options:**
+- `--limit-jobs <int>`: Maximum number of open jobs to display in the dossier (default: 8).
+- `--min-score <int>`: Filter displayed open jobs by minimum relevance score (0-100, default: 0).
+- `--config <path>`: Path to configuration YAML file (default: `config.yaml`).
+
+**Examples:**
+```bash
+# View complete company dossier
+mindmap company Google
+
+# View up to 15 open roles
+mindmap company Stripe --limit-jobs 15
+
+# Only display jobs scoring >= 75
+mindmap company OpenAI --min-score 75
+```
+
 
 

@@ -112,3 +112,73 @@ def test_company_details_command(runner: CliRunner, mock_config: pathlib.Path):
         assert "Warm Outreach" in result.output
         assert "AI Application Engineer" in result.output
         assert "Shubham K [TALENT]" in result.output
+
+
+def test_company_help(runner: CliRunner):
+    """Verify that company command provides rich and informative help output."""
+    result = runner.invoke(cli, ["company", "--help"])
+    assert result.exit_code == 0
+    assert "company [OPTIONS] COMPANY_NAME" in result.output
+    assert "Arguments:" in result.output
+    assert "COMPANY_NAME" in result.output
+    assert "Dossier Highlights:" in result.output
+    assert "Score Breakdown" in result.output
+    assert "Examples:" in result.output
+    assert "$ mindmap company Google" in result.output
+    assert "Related Commands:" in result.output
+    assert "--limit-jobs" in result.output
+    assert "--min-score" in result.output
+
+
+def test_company_details_with_limit_and_min_score(runner: CliRunner, mock_config: pathlib.Path):
+    """Verify that --limit-jobs and --min-score filter jobs correctly in company output."""
+    with patch("src.main.MindMapApp") as mock_app_cls:
+        mock_app = MagicMock()
+        mock_app.get_company_details.return_value = {
+            "company": {
+                "id": "bigcorp",
+                "name": "BigCorp",
+                "score": 90,
+                "action_cluster": "Warm Outreach",
+                "domain_cluster": "Enterprise SaaS",
+                "target_tier": "Target",
+                "evaluation_data": {"job_fit_score": 90, "company_fit_score": 90, "network_score": 80},
+                "recommended_action": "Reach out to internal lead.",
+            },
+            "jobs": [
+                {"id": "j1", "title": "Staff Engineer", "relevance_score": 95, "link": "https://bigcorp.com/j1"},
+                {"id": "j2", "title": "Senior Engineer", "relevance_score": 85, "link": "https://bigcorp.com/j2"},
+                {"id": "j3", "title": "Junior Engineer", "relevance_score": 60, "link": "https://bigcorp.com/j3"},
+            ],
+            "connections": [],
+        }
+        mock_app_cls.return_value = mock_app
+
+        # Test with min-score=80 and limit-jobs=1
+        result = runner.invoke(
+            cli,
+            ["company", "BigCorp", "--config", str(mock_config), "--min-score", "80", "--limit-jobs", "1"],
+        )
+        assert result.exit_code == 0
+        assert "Staff Engineer" in result.output
+        assert "Senior Engineer" not in result.output
+        assert "Junior Engineer" not in result.output
+        assert "more jobs. Use --limit-jobs to view more." in result.output
+
+
+def test_companies_command_with_sync(runner: CliRunner, mock_config: pathlib.Path):
+    """Verify that mindmap companies --sync invokes SyncService.sync_companies_and_base."""
+    with (
+        patch("src.generator.sync_service.SyncService.sync_companies_and_base") as mock_sync,
+        patch("src.main.MindMapApp") as mock_app_cls,
+    ):
+        mock_app = MagicMock()
+        mock_app.list_companies.return_value = [
+            {"name": "Co1", "score": 80, "action_cluster": "Warm Outreach", "domain_cluster": "AI"}
+        ]
+        mock_app_cls.return_value = mock_app
+
+        result = runner.invoke(cli, ["companies", "--config", str(mock_config), "--sync"])
+        assert result.exit_code == 0
+        assert mock_sync.called
+        assert "Synchronized company notes and Dashboard.base to Obsidian." in result.output

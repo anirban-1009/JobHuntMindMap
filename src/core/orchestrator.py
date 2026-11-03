@@ -614,9 +614,13 @@ class MindMapApp:
         connections_path = pathlib.Path(conn_path or "data/Connections.csv")
         builder = NetworkGraphBuilder(connections_path, metadata_path=user_cfg.get("linkedin_metadata_path"))
 
-        # Group jobs by company
+        # Group jobs by company (only considering scraped, valid jobs)
         company_jobs_map: Dict[str, List[Dict[str, Any]]] = {}
         for job in all_jobs:
+            if job.get("status") == "discovered":
+                continue
+            if job.get("status") == "rejected" and job.get("relevance_score") == 0:
+                continue
             c = job.get("company")
             if c:
                 company_jobs_map.setdefault(c, []).append(job)
@@ -655,6 +659,12 @@ class MindMapApp:
         for cname in ("Warm Outreach", "Direct Apply", "Network Nurture", "Watchlist"):
             count = cluster_counts.get(cname, 0)
             logger.info(f"  {cname}: {count} companies")
+
+        # Synchronize evaluated companies and Dashboard.base to Obsidian
+        try:
+            SyncService(self.config, llm_client=self.llm).sync_companies_and_base()
+        except Exception as e:
+            logger.warning(f"Could not automatically sync companies and Dashboard.base to Obsidian: {e}")
 
         return [ev.to_dict() for ev in processed]
 
@@ -698,6 +708,8 @@ class MindMapApp:
             for j in all_jobs
             if j.get("company")
             and (j.get("company").lower() == c_norm or company["id"] in j.get("company").lower().replace(" ", "_"))
+            and j.get("status") != "discovered"
+            and not (j.get("status") == "rejected" and j.get("relevance_score") == 0)
         ]
         matching_jobs.sort(
             key=lambda j: (j.get("relevance_score") is not None, j.get("relevance_score") or 0),

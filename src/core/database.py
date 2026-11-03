@@ -663,6 +663,12 @@ class DatabaseManager:
 
     def get_company(self, identifier: str) -> Optional[Dict[str, Any]]:
         """Retrieves a company by ID or exact/case-insensitive name."""
+        if not identifier:
+            return None
+        try:
+            identifier = identifier.encode("utf-16", "surrogatepass").decode("utf-16")
+        except Exception:
+            identifier = identifier.encode("utf-8", "replace").decode("utf-8")
         query = "SELECT * FROM companies WHERE id = ? OR LOWER(name) = LOWER(?)"
         try:
             with contextlib.closing(self._get_connection()) as conn:
@@ -750,6 +756,29 @@ class DatabaseManager:
                 logger.info(f"Updated status for company {company_id} to {status}.")
         except Exception as e:
             logger.error(f"Failed to update company status for {company_id}: {e}")
+            raise
+
+    def update_company_fields(self, company_id: str, fields: Dict[str, Any]):
+        """Updates arbitrary allowed columns on a company record (e.g. status, target_tier, notes)."""
+        allowed = {"status", "target_tier", "notes", "outreach_poc", "outreach_date", "action_cluster"}
+        valid_updates = {k: v for k, v in fields.items() if k in allowed}
+        if not valid_updates:
+            return
+
+        set_clause = ", ".join(f"{k} = ?" for k in valid_updates)
+        values = list(valid_updates.values())
+        values.extend([company_id, company_id])
+        query = (
+            f"UPDATE companies SET {set_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ? OR LOWER(name) = LOWER(?)"
+        )
+
+        try:
+            with contextlib.closing(self._get_connection()) as conn:
+                with conn:
+                    conn.execute(query, tuple(values))
+            logger.info(f"Updated company fields for {company_id}: {list(valid_updates.keys())}")
+        except Exception as e:
+            logger.error(f"Failed to update company fields for {company_id}: {e}")
             raise
 
     def delete_company(self, company_id: str):

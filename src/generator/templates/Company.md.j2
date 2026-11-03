@@ -43,15 +43,20 @@ tags:
 {% endif %}
 
 ## Open Opportunities
+{% if jobs %}
+| Role / Opportunity | Status | Score | Location | Link |
+| :--- | :--- | :---: | :--- | :--- |
 {% for job in jobs %}
-- [[{{ job.filename }}|{{ job.title }}]] ({{ job.status }}){% if job.score %} · Match Score: **{{ job.score }}**{% endif %}{% if job.link %} · [Apply Link]({{ job.link }}){% endif %}
+| [[{{ job.filename }}]] | {{ job.status or '-' }} | {{ job.score if job.score is not none else '-' }} | {{ (job.location or '-') | replace('|', '-') }} | {% if job.link %}[Apply Link]({{ job.link }}){% else %}-{% endif %} |
+{% endfor %}
 {% else %}
 - No open jobs currently in cache.
-{% endfor %}
+{% endif %}
 
 ## Network & Referral Contacts
 {% for person in people %}
 - [[{{ person.filename }}|{{ person.name }}]] - {{ person.title }}{% if person.role_type and person.role_type != 'other' %} `[{{ person.role_type|upper }}]`{% endif %}
+
 {% else %}
 - No direct connections found at this company.
 {% endfor %}

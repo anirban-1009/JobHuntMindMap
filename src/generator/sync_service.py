@@ -9,6 +9,7 @@ from src.core.network_graph import NetworkGraphBuilder
 from src.core.referral_service import ReferralService
 from src.core.relevance_scorer import ScoringResult
 from src.core.resume_service import ResumeService
+from src.generator.base_generator import BaseGenerator
 from src.generator.dashboard_generator import DashboardGenerator
 from src.generator.template_manager import TemplateManager
 from src.generator.vault_indexer import VaultIndexer
@@ -83,6 +84,7 @@ class SyncService:
         self.vault_manager = VaultManager(config)
         self.template_manager = TemplateManager()
         self.dashboard_generator = DashboardGenerator(config)
+        self.base_generator = BaseGenerator(config)
         self.extractor = JobDetailsExtractor(None, llm_client=llm_client)
         self.referral_service = ReferralService(llm_client, config) if llm_client else None
         self.resume_service = ResumeService(llm_client, config.get("user", {}).get("resume_path"))
@@ -106,13 +108,39 @@ class SyncService:
         # 3. Sync Jobs and Companies
         self._sync_all()
 
-        # 4. Generate the applications-by-month/week dashboard
+        # 4. Generate the applications-by-month/week dashboard canvas and Dashboard.base
         self.dashboard_generator.generate(self.extractor.db)
+        self.base_generator.generate_or_update(self.extractor.db)
 
         # 5. Refresh vault search index (job/person/company notes just changed above)
         self._reindex_vault()
 
         logger.info("Obsidian sync complete.")
+
+    def sync_companies_and_base(self) -> None:
+        """Lightweight synchronization: updates company markdown notes, 00_Company_Clusters.md,
+        and Dashboard.base without requiring a full re-sync of all individual job notes.
+        """
+        logger.info("Synchronizing company notes and Dashboard.base to Obsidian...")
+        if not self.extractor.db:
+            logger.warning("Database not available. Skipping company & base sync.")
+            return
+
+        self.vault_manager.ensure_folders_exist()
+        self.sync_from_obsidian()
+
+        all_jobs_data = self.extractor.db.get_all_jobs(limit=10000)
+
+        user_cfg = self.config.get("user", {})
+        conn_path = user_cfg.get("linkedin_connections_path") or self.config.get("network", {}).get("connections_path")
+        connections_path = pathlib.Path(conn_path or "data/Connections.csv")
+        builder = NetworkGraphBuilder(connections_path, metadata_path=user_cfg.get("linkedin_metadata_path"))
+        all_connections = builder.connections
+
+        self._sync_companies(all_jobs_data, all_connections)
+        self.base_generator.generate_or_update(self.extractor.db)
+        self._reindex_vault()
+        logger.info("Company notes and Dashboard.base sync complete.")
 
     def _reindex_vault(self) -> None:
         """Updates the vault search index after notes have been written/removed."""
@@ -280,78 +308,8 @@ class SyncService:
                     except Exception as e:
                         logger.warning(f"Could not remove stale duplicate {old_path}: {e}")
 
-        # 3. Sync Companies
-        db_companies = {}
-        if self.extractor.db:
-            for c in self.extractor.db.get_all_companies(limit=5000):
-                db_companies[c["name"].lower()] = c
-                db_companies[c["id"]] = c
-
-        all_companies = set(list(company_to_jobs.keys()) + list(company_to_people.keys()))
-        for co in all_companies:
-            co_jobs = []
-            if co in company_to_jobs:
-                for j in company_to_jobs[co]:
-                    link_val = getattr(j["details"], "link", "") or getattr(j["details"], "apply_link", "")
-                    co_jobs.append(
-                        {
-                            "title": j["details"].title,
-                            "filename": f"{j['details'].title} - {j['details'].company}",
-                            "status": "Active",
-                            "score": j["score"].score if hasattr(j.get("score"), "score") else j.get("score"),
-                            "link": link_val,
-                        }
-                    )
-
-            if not co_jobs:
-                continue
-
-            co_people = []
-            if co in company_to_people:
-                for p in company_to_people[co]:
-                    co_people.append(
-                        {
-                            "name": p.full_name,
-                            "filename": f"{p.full_name}",
-                            "title": p.position,
-                            "role_type": NetworkGraphBuilder.classify_role(p.position),
-                        }
-                    )
-
-            eval_info = db_companies.get(co.lower()) or {}
-            eval_data = eval_info.get("evaluation_data") or {}
-            content = self.template_manager.render_company(
-                name=co,
-                jobs=co_jobs,
-                people=co_people,
-                score=eval_info.get("score", 0),
-                action_cluster=eval_info.get("action_cluster", "Watchlist"),
-                domain_cluster=eval_info.get("domain_cluster", "General Tech & Services"),
-                recommended_action=eval_info.get("recommended_action") or eval_data.get("recommended_action", ""),
-                target_tier=eval_info.get("target_tier", "Standard"),
-                status=eval_info.get("status", "new"),
-                breakdown=eval_data,
-            )
-            self.vault_manager.write_file(content, f"{co}.md", "companies")
-
-        # 4. Generate Company Clusters Hub Note (only if there are synced jobs)
-        if jobs and self.extractor.db:
-            clusters = {"Warm Outreach": [], "Direct Apply": [], "Network Nurture": [], "Watchlist": []}
-            seen_hub_ids = set()
-            for c_info in self.extractor.db.get_all_companies(limit=5000):
-                cid = c_info.get("id")
-                if cid in seen_hub_ids:
-                    continue
-                seen_hub_ids.add(cid)
-                c_action = c_info.get("action_cluster", "Watchlist")
-                if c_action in clusters:
-                    clusters[c_action].append(c_info)
-                else:
-                    clusters.setdefault("Watchlist", []).append(c_info)
-
-            hub_content = self.template_manager.render_company_clusters_hub(clusters)
-            if isinstance(hub_content, str):
-                self.vault_manager.write_file(hub_content, "00_Company_Clusters.md", "companies")
+        # 3. Sync Companies & Clusters Hub
+        self._sync_companies(all_jobs_data, all_connections)
 
     def _index_existing_job_notes(self) -> Dict[str, Dict[str, Any]]:
         """Maps job_id -> {"frontmatter": dict, "paths": [Path, ...]} for job notes already in
@@ -505,3 +463,147 @@ class SyncService:
                 logger.warning(f"Error processing {file_path} for sync-back: {e}")
 
         logger.info(f"Sync-back complete. Updated {updated_count} jobs.")
+
+        # Sync back company edits (status, target_tier) from Obsidian
+        companies_folder = self.vault_manager.vault_path / self.vault_manager.folders.get("companies", "Companies")
+        if companies_folder.exists():
+            updated_companies = 0
+            for file_path in companies_folder.glob("*.md"):
+                if file_path.name.startswith("00_"):
+                    continue
+                try:
+                    content = file_path.read_text(encoding="utf-8")
+                    frontmatter = _read_frontmatter(content)
+                    if not frontmatter or frontmatter.get("type") != "company":
+                        continue
+                    company_name = frontmatter.get("name") or file_path.stem
+                    if company_name:
+                        try:
+                            company_name = company_name.encode("utf-16", "surrogatepass").decode("utf-16")
+                        except Exception:
+                            company_name = company_name.encode("utf-8", "replace").decode("utf-8")
+                    status_text = frontmatter.get("status")
+                    target_tier = frontmatter.get("target_tier")
+                    if company_name and (status_text or target_tier):
+                        existing = self.extractor.db.get_company(company_name)
+                        if existing:
+                            updates = {}
+                            if status_text and status_text != existing.get("status"):
+                                updates["status"] = status_text
+                            if target_tier and target_tier != existing.get("target_tier"):
+                                updates["target_tier"] = target_tier
+                            if updates:
+                                self.extractor.db.update_company_fields(existing["id"], updates)
+                                updated_companies += 1
+                except Exception as e:
+                    logger.warning(f"Error processing {file_path} for company sync-back: {e}")
+            if updated_companies:
+                logger.info(f"Sync-back updated {updated_companies} companies from Obsidian.")
+
+    def _sync_companies(self, all_jobs_data: List[Dict[str, Any]], all_connections: List[Any]) -> None:
+        """Syncs all evaluated companies, matching open jobs, and verified connections to Obsidian."""
+        if not self.extractor.db:
+            return
+
+        # 1. Fetch DB evaluated companies
+        db_companies: Dict[str, Dict[str, Any]] = {}
+        company_name_casing: Dict[str, str] = {}
+        all_company_records = self.extractor.db.get_all_companies(limit=5000)
+        if isinstance(all_company_records, list):
+            for c in all_company_records:
+                if isinstance(c, dict) and "name" in c:
+                    db_companies[c["name"].lower()] = c
+                    db_companies[c["id"]] = c
+                    company_name_casing[c["name"].lower()] = c["name"]
+
+        # 2. Group DB jobs by lowercase company
+        company_to_jobs: Dict[str, List[Dict[str, Any]]] = {}
+        for jd in all_jobs_data:
+            if jd.get("status") == "discovered":
+                continue
+            if _is_auto_rejected(jd):
+                continue
+            c = jd.get("company")
+            if c:
+                company_name_casing.setdefault(c.lower(), c)
+                link_val = jd.get("link") or jd.get("apply_link") or ""
+                score_val = jd.get("relevance_score")
+                clean_filename = self.vault_manager._sanitize_filename(f"{jd.get('title')} - {c}")
+                company_to_jobs.setdefault(c.lower(), []).append(
+                    {
+                        "title": jd.get("title", "Unknown Role"),
+                        "filename": clean_filename,
+                        "status": jd.get("status", "Active"),
+                        "score": score_val,
+                        "link": link_val,
+                        "location": jd.get("location"),
+                    }
+                )
+
+        # 3. Group connections by lowercase company
+        company_to_people: Dict[str, List[Any]] = {}
+        for p in all_connections:
+            if getattr(p, "company", None):
+                company_name_casing.setdefault(p.company.lower(), p.company)
+                company_to_people.setdefault(p.company.lower(), []).append(p)
+
+        # 4. Process all companies preserving casing
+        all_company_keys = set(company_name_casing.keys())
+        for co_key in all_company_keys:
+            eval_info = db_companies.get(co_key) or {}
+            eval_data = eval_info.get("evaluation_data") or {}
+
+            # Jobs for this company
+            co_jobs = list(company_to_jobs.get(co_key, []))
+
+            # People for this company
+            raw_people = company_to_people.get(co_key, [])
+            co_people = []
+            for p in raw_people:
+                co_people.append(
+                    {
+                        "name": p.full_name,
+                        "filename": f"{p.full_name}",
+                        "title": p.position,
+                        "role_type": NetworkGraphBuilder.classify_role(p.position),
+                    }
+                )
+
+            # Skip if no jobs, no people, and no evaluation data
+            if not co_jobs and not co_people and not eval_info:
+                continue
+
+            display_name = eval_info.get("name") or company_name_casing.get(co_key) or co_key
+
+            content = self.template_manager.render_company(
+                name=display_name,
+                jobs=co_jobs,
+                people=co_people,
+                score=eval_info.get("score", 0),
+                action_cluster=eval_info.get("action_cluster", "Watchlist"),
+                domain_cluster=eval_info.get("domain_cluster", "General Tech & Services"),
+                recommended_action=eval_info.get("recommended_action") or eval_data.get("recommended_action", ""),
+                target_tier=eval_info.get("target_tier", "Standard"),
+                status=eval_info.get("status", "new"),
+                breakdown=eval_data,
+            )
+            self.vault_manager.write_file(content, f"{display_name}.md", "companies")
+
+        # 5. Generate Company Clusters Hub Note (00_Company_Clusters.md)
+        if all_company_records:
+            clusters = {"Warm Outreach": [], "Direct Apply": [], "Network Nurture": [], "Watchlist": []}
+            seen_hub_ids = set()
+            for c_info in all_company_records:
+                cid = c_info.get("id")
+                if cid in seen_hub_ids:
+                    continue
+                seen_hub_ids.add(cid)
+                c_action = c_info.get("action_cluster", "Watchlist")
+                if c_action in clusters:
+                    clusters[c_action].append(c_info)
+                else:
+                    clusters.setdefault("Watchlist", []).append(c_info)
+
+            hub_content = self.template_manager.render_company_clusters_hub(clusters)
+            if isinstance(hub_content, str):
+                self.vault_manager.write_file(hub_content, "00_Company_Clusters.md", "companies")
